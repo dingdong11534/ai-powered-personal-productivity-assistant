@@ -114,7 +114,7 @@ def get_db() -> Generator[Session, None, None]:
 def create_all_tables(bind: Engine | None = None) -> None:
     """Create every table registered on Base.metadata (idempotent — safe
     to call on an already-initialized database; existing tables are left
-    alone).
+    alone), then apply the narrow additive patch in `_ensure_task_project_id_column`.
 
     Imports app.storage.models locally, not at module top-level: models
     must be imported *somewhere* before create_all() runs so they've
@@ -125,4 +125,69 @@ def create_all_tables(bind: Engine | None = None) -> None:
     """
     from app.storage import models  # noqa: F401
 
-    Base.metadata.create_all(bind=bind or engine)
+    target = bind or engine
+    Base.metadata.create_all(bind=target)
+    _ensure_task_project_id_column(target)
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    result = conn.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=:name",
+        {"name": table_name},
+    ).fetchone()
+    return result is not None
+
+
+def _ensure_task_project_id_column(target_engine: Engine) -> None:
+    """Additive-only patch: add `tasks.project_id` if it's missing.
+
+    WHY THIS EXISTS
+    -----------------
+    `Base.metadata.create_all()` only creates tables that don't exist yet
+    — it never alters an existing table's columns. Phase 1 adds
+    `project_id` to the *already-existing* `tasks` table, so a database
+    created under Phase 0.2 (before this column existed) would otherwise
+    be silently out of sync with the model: SQLAlchemy would generate
+    `INSERT`/`SELECT` statements referencing a `project_id` column the
+    real table doesn't have, and every query would fail.
+
+    This function detects exactly that situation — `tasks` table exists,
+    `project_id` column doesn't — and adds the column via a plain
+    `ALTER TABLE ... ADD COLUMN`, which SQLite supports for adding a
+    nullable column with no default. Existing rows get `NULL` for the
+    new column, which is exactly correct: `project_id` is nullable
+    (a task doesn't have to belong to a project), so "we don't know"
+    and "not assigned to a project" are the same value.  No data in any
+    existing column is touched.
+
+    This patch is intentionally narrow: it fixes precisely one kind of
+    change (an added nullable column with no default, no rename, no data
+    transform). It does not generalize to a real migration tool.
+
+    SQLite-only: on any other backend this is a no-op, since only SQLite
+    is used by this project so far (see app.core.config's DATABASE_URL).
+
+    WHY NOT ALEMBIC, YET
+    -----------------------
+    See docs/architecture.md's "Migrations" section for the full
+    reasoning. Short version: everything this phase's schema needs
+    (new tables, one added nullable column) is safely expressible as
+    "create what's missing, patch what changed" — which this function
+    and `create_all_tables()` already do, and which I can verify
+    directly against SQLite semantics. The point to actually adopt
+    Alembic is documented there too: the first migration that isn't
+    purely additive (a rename, a backfill, a NOT NULL added to a
+    populated column, a dropped column) needs real up/down migration
+    scripts, because "detect and patch" stops being expressible as a
+    simple idempotent check at that point.
+    """
+    if not str(target_engine.url).startswith("sqlite"):
+        return
+    with target_engine.begin() as conn:
+        if not _table_exists(conn, "tasks"):
+            return  # fresh database — create_all() already made it with the column
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(tasks)").fetchall()}
+        if "project_id" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE tasks ADD COLUMN project_id INTEGER REFERENCES projects(id)"
+            )

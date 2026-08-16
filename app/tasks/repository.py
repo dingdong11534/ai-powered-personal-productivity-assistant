@@ -37,10 +37,12 @@ real).
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.storage.models import Task
+from app.storage.models import Task, TaskStatus, task_tags
 
 
 class TaskRepository:
@@ -59,12 +61,70 @@ class TaskRepository:
         """Return the Task with this id, or None if it doesn't exist."""
         return self.db.get(Task, task_id)
 
-    def list(self, *, skip: int = 0, limit: int = 100) -> list[Task]:
-        """Return up to `limit` tasks, newest first, skipping the first
-        `skip` — a simple offset/limit page. Ordering by created_at,
-        rather than leaving order database-default/unspecified, is what
-        makes repeated calls to GET /tasks return a stable order."""
-        stmt = select(Task).order_by(Task.created_at.desc()).offset(skip).limit(limit)
+    def list(
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        status: TaskStatus | None = None,
+        priority: int | None = None,
+        project_id: int | None = None,
+        tag_id: int | None = None,
+        deadline_before: datetime | None = None,
+        deadline_after: datetime | None = None,
+        completed: bool | None = None,
+        search: str | None = None,
+    ) -> list[Task]:
+        """Return up to `limit` tasks matching every given filter,
+        newest first, skipping the first `skip`.
+
+        Every filter argument is optional and independent — omitted ones
+        (left as None/default) simply aren't applied, so `list()` with
+        no arguments is unfiltered ("give me everything"), matching how
+        GET /tasks behaves with no query parameters.
+
+        `completed` is a convenience filter layered on top of `status`:
+        `completed=True` means `status == DONE`, `completed=False` means
+        `status != DONE`. It's independent of the `status` filter (both
+        can be supplied at once, combined with AND) rather than a
+        special-cased alias for it — "not done" is a broader question
+        ("anything still needing attention") than "status is exactly
+        todo/in_progress/cancelled", and a caller may want to ask either.
+
+        `search` matches (case-insensitively, via `ilike`) against
+        `title` OR `description` — a simple substring search, not a
+        full-text index. See docs/architecture.md's "Search and filter"
+        section for why that's the deliberate scope for this phase.
+
+        `tag_id` filters via a join through the `task_tags` association
+        table — see app.storage.models for why that's a plain Table
+        rather than a mapped class.
+        """
+        stmt = select(Task).order_by(Task.created_at.desc())
+
+        if status is not None:
+            stmt = stmt.where(Task.status == status)
+        if priority is not None:
+            stmt = stmt.where(Task.priority == priority)
+        if project_id is not None:
+            stmt = stmt.where(Task.project_id == project_id)
+        if deadline_before is not None:
+            stmt = stmt.where(Task.deadline <= deadline_before)
+        if deadline_after is not None:
+            stmt = stmt.where(Task.deadline >= deadline_after)
+        if completed is True:
+            stmt = stmt.where(Task.status == TaskStatus.DONE)
+        elif completed is False:
+            stmt = stmt.where(Task.status != TaskStatus.DONE)
+        if search:
+            like = f"%{search}%"
+            stmt = stmt.where(or_(Task.title.ilike(like), Task.description.ilike(like)))
+        if tag_id is not None:
+            stmt = stmt.join(task_tags, task_tags.c.task_id == Task.id).where(
+                task_tags.c.tag_id == tag_id
+            )
+
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def update(self, task: Task, changes: dict) -> Task:
