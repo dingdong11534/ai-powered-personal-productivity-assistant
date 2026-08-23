@@ -653,3 +653,29 @@ trigger condition (the first non-additive schema change).
 - **SQLite concurrency** (carried over from Phase 0.2 — a background
   scheduler, whenever it's built, is exactly the point this becomes
   concrete rather than theoretical).
+
+## 9. Phase 4 Architecture — AI Assistant
+
+Phase 4 introduces a text-based AI assistant core that operates over the productivity application's domain services using structured, validated tool execution.
+
+### 9.1 Key Components
+
+1. **AI Provider Abstraction (`app.ai.provider`)**:
+   - `AIProvider` base class with `MockAIProvider` (offline-first, deterministic keyword triggers) and `OpenAICompatibleProvider` (for OpenAI, Groq, Ollama, etc.).
+   - Configurable via `AI_PROVIDER`, `AI_MODEL`, and `AI_BASE_URL`.
+
+2. **Persistent Conversation System (`app.conversations`)**:
+   - Stores conversations (`conversations`) and transcripts (`messages`) in SQLite.
+   - Preserves message histories across application reboots.
+
+3. **Tool Registry & Validation (`app.ai.tools`)**:
+   - 19 standard domain tools covering Tasks, Projects, Habits, Pomodoro, Reminders, Schedule, and Notifications.
+   - Enforces scope checking via `PermissionChecker` before executing domain services.
+
+4. **Assistant Core Engine (`app.ai.assistant`)**:
+   - Orchestrates conversation history, injects system context (`ContextBuilder`) and deterministic daily plan suggestions (`DailyPlanner`).
+   - Executes multi-turn tool loops with a max iteration limit of 5 to prevent runaway execution.
+
+5. **Web Chat Interface (`app.interfaces.static`)**:
+   - Adds a dedicated AI Assistant tab to the local web dashboard for real-time chat, conversation management, and tool call visibility.
+

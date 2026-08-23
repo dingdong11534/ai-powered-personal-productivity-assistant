@@ -44,6 +44,7 @@ from app.storage.database import Base, get_db
 
 
 def _make_test_engine():
+    from app.storage import models  # noqa: F401
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},

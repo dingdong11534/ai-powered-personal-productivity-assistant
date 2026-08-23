@@ -601,3 +601,38 @@ select:focus, input:focus, textarea:focus {
   font-variant-numeric: tabular-nums;
   color: var(--accent-primary);
 }
+
+/* Chat Interface Styling */
+.chat-bubble {
+  max-width: 80%;
+  padding: 0.85rem 1.15rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  background-color: var(--accent-primary);
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.chat-bubble-assistant {
+  align-self: flex-start;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-bottom-left-radius: 2px;
+}
+
+.chat-bubble-tool {
+  align-self: flex-start;
+  background-color: rgba(6, 182, 212, 0.1);
+  border: 1px dashed var(--accent-info);
+  color: var(--accent-info);
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+

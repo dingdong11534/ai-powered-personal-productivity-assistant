@@ -14,7 +14,7 @@ def test_defaults_are_sane_for_local_development():
     settings = Settings(_env_file=None)  # ignore any real .env for this test
 
     assert settings.environment == "development"
-    assert settings.ai_provider == "none"
+    assert settings.ai_provider == "mock"
     assert settings.database_url.startswith("sqlite:///")
 
 

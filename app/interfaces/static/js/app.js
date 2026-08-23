@@ -99,6 +99,7 @@ function loadCurrentView() {
     case 'schedule': loadScheduleView(); break;
     case 'reminders': loadRemindersView(); break;
     case 'notifications': loadNotificationsView(); break;
+    case 'assistant': loadAssistantView(); break;
     case 'settings': break;
   }
   updateNotificationDot();
@@ -921,3 +922,101 @@ async function handleCreateTagSubmit(e) {
     initDropdownData();
   } catch (e) {}
 }
+
+// AI ASSISTANT CHAT FUNCTIONS
+state.currentConversationId = null;
+
+async function loadAssistantView() {
+  const conversations = await api('/conversations');
+  const listContainer = document.getElementById('chat-conversations-list');
+  if (conversations.length === 0) {
+    listContainer.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">No chats yet.</p>';
+    state.currentConversationId = null;
+    updateChatInputState();
+    return;
+  }
+
+  listContainer.innerHTML = conversations.map(c => `
+    <button class="btn btn-secondary btn-sm" style="width:100%; justify-content:flex-start; text-align:left; ${state.currentConversationId === c.id ? 'border-color:var(--accent-primary); background:rgba(99,102,241,0.1);' : ''}" onclick="selectConversation(${c.id})">
+      💬 ${escapeHTML(c.title || `Chat #${c.id}`)}
+    </button>
+  `).join('');
+
+  if (!state.currentConversationId && conversations.length > 0) {
+    state.currentConversationId = conversations[0].id;
+  }
+  if (state.currentConversationId) {
+    selectConversation(state.currentConversationId);
+  }
+}
+
+async function createNewConversation() {
+  try {
+    const conv = await api('/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ title: `Chat ${new Date().toLocaleTimeString()}` })
+    });
+    state.currentConversationId = conv.id;
+    loadAssistantView();
+  } catch (e) {}
+}
+
+async function selectConversation(id) {
+  state.currentConversationId = id;
+  updateChatInputState();
+  const messages = await api(`/conversations/${id}/messages`);
+  const transcript = document.getElementById('chat-messages-transcript');
+
+  if (messages.length === 0) {
+    transcript.innerHTML = '<p style="color:var(--text-muted); text-align:center; margin-top:2rem;">Conversation started. Type a message below.</p>';
+    return;
+  }
+
+  transcript.innerHTML = messages.map(m => {
+    if (m.role === 'user') {
+      return `<div class="chat-bubble chat-bubble-user">${escapeHTML(m.content)}</div>`;
+    } else if (m.role === 'assistant') {
+      let html = `<div class="chat-bubble chat-bubble-assistant">${escapeHTML(m.content || '')}</div>`;
+      if (m.tool_calls) {
+        html += `<div class="chat-bubble chat-bubble-tool">🛠️ Tool Call Request: ${escapeHTML(m.tool_calls)}</div>`;
+      }
+      return html;
+    } else if (m.role === 'tool') {
+      return `<div class="chat-bubble chat-bubble-tool">⚙️ Tool '${escapeHTML(m.name || 'tool')}' Output: ${escapeHTML(m.content)}</div>`;
+    }
+    return '';
+  }).join('');
+
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function updateChatInputState() {
+  const input = document.getElementById('chat-message-input');
+  const btn = document.getElementById('chat-send-btn');
+  const enabled = state.currentConversationId != null;
+  input.disabled = !enabled;
+  btn.disabled = !enabled;
+}
+
+async function handleSendChatMessage(e) {
+  e.preventDefault();
+  if (!state.currentConversationId) return;
+
+  const input = document.getElementById('chat-message-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  const transcript = document.getElementById('chat-messages-transcript');
+  transcript.innerHTML += `<div class="chat-bubble chat-bubble-user">${escapeHTML(text)}</div>`;
+  transcript.scrollTop = transcript.scrollHeight;
+
+  try {
+    await api(`/conversations/${state.currentConversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ role: 'user', content: text })
+    });
+    selectConversation(state.currentConversationId);
+  } catch (err) {}
+}
+

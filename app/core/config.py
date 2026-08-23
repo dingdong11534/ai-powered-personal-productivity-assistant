@@ -98,14 +98,21 @@ class Settings(BaseSettings):
         "local-first use; kept swappable via this single value.",
     )
 
-    # --- AI layer (values are optional placeholders until Phase 4) ---
+    # --- AI layer ---
     ai_provider: str = Field(
-        default="none",
-        description="Which AI backend adapter to use, e.g. 'openai', "
-        "'anthropic', 'groq', 'ollama'. 'none' disables the AI layer "
-        "entirely, which is the correct value through Phase 3.",
+        default="mock",
+        description="Which AI backend adapter to use, e.g. 'mock', 'openai', "
+        "'anthropic', 'groq', 'ollama'. 'mock' uses the local mock adapter.",
     )
     ai_api_key: str | None = Field(default=None, repr=False)
+    ai_model: str = Field(
+        default="gpt-4o-mini",
+        description="Model name to pass to the AI provider.",
+    )
+    ai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="Base URL for OpenAI-compatible endpoint (e.g. Ollama or vLLM or Groq).",
+    )
 
     def ensure_data_dir(self) -> Path:
         """Create the data directory if it doesn't exist yet, return it.

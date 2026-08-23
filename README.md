@@ -5,12 +5,7 @@ projects, habits, scheduling, and (eventually) a controlled AI agent with
 voice interaction. See `docs/architecture.md` for the full architecture,
 database schema, and the reasoning behind each design decision.
 
-**Status:** Phase 2 — habit, time, and reminder management. Working
-today: Projects, Tasks (with Project links, Tags, Dependencies, search/
-filter — Phase 1), Habits (with completion history and computed
-streaks/statistics), Pomodoro sessions, Reminders, a local Schedule, and
-Notifications. No AI, voice, frontend, external integrations, or
-background dispatch/scheduling yet.
+**Status:** Phase 4 — AI Assistant complete. Working today: Projects, Tasks (with Project links, Tags, Dependencies, search/filter), Habits (with completion history and computed streaks/statistics), Pomodoro sessions, Reminders, a local Schedule, Notifications, Local Web Dashboard, and a text-based AI Assistant with vendor-agnostic LLM abstraction, tool registry, and daily planning capabilities.
 
 ## Setup
 

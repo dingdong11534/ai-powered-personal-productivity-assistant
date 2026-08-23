@@ -448,3 +448,49 @@ class Notification(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"Notification(id={self.id!r}, title={self.title!r}, read={self.read_at is not None})"
+
+
+class Conversation(Base):
+    """A persistent conversation session with the AI Assistant."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"Conversation(id={self.id!r}, title={self.title!r})"
+
+
+class Message(Base):
+    """A single message transcript in a conversation session."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, doc="user, assistant, system, or tool"
+    )
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_calls: Mapped[str | None] = mapped_column(
+        Text, nullable=True, doc="JSON string of requested tool calls if assistant message"
+    )
+    tool_call_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, doc="Associated tool call identifier if tool message"
+    )
+    name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, doc="Name of tool if tool response message"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"Message(id={self.id!r}, role={self.role!r}, conversation_id={self.conversation_id!r})"
+

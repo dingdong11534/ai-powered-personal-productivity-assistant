@@ -62,8 +62,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.conversations.exceptions import ConversationNotFoundError, MessageNotFoundError
 from app.core.config import get_settings
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
+from app.interfaces.api.conversations import router as conversations_router
 from app.interfaces.api.habits import router as habits_router
 from app.interfaces.api.notifications import router as notifications_router
 from app.interfaces.api.pomodoro import router as pomodoro_router
@@ -116,6 +118,8 @@ NOT_FOUND_EXCEPTIONS = (
     ReminderNotFoundError,
     ScheduleItemNotFoundError,
     NotificationNotFoundError,
+    ConversationNotFoundError,
+    MessageNotFoundError,
 )
 BAD_REQUEST_EXCEPTIONS = (SelfDependencyError, InvalidTimeRangeError)
 CONFLICT_EXCEPTIONS = (
@@ -145,6 +149,7 @@ app.include_router(pomodoro_router)
 app.include_router(reminders_router)
 app.include_router(schedule_router)
 app.include_router(notifications_router)
+app.include_router(conversations_router)
 
 # Phase 3: Static Files and Web UI Dashboard
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

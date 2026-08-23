@@ -1,0 +1,54 @@
+"""Deterministic application-driven daily planning generator."""
+
+from datetime import datetime
+from typing import Any
+from sqlalchemy.orm import Session
+
+from app.ai.tools.implementations import _to_dict
+from app.habits.service import HabitService
+from app.scheduling.service import ScheduleService
+from app.tasks.service import TaskService
+
+
+class DailyPlanner:
+    """Computes a deterministic daily plan based on system state."""
+
+    def generate_plan(self, session: Session) -> dict[str, Any]:
+        task_svc = TaskService(session)
+        habit_svc = HabitService(session)
+        sched_svc = ScheduleService(session)
+
+        all_tasks = task_svc.list_tasks(completed=False)
+        # Sort by priority ascending (1 = Critical), then deadline nullable
+        all_tasks.sort(key=lambda t: (t.priority, t.deadline or datetime(9999, 12, 31)))
+
+        top_tasks = all_tasks[:5]
+        habits = habit_svc.list_habits(include_archived=False)
+        schedule = sched_svc.list_schedule_items()
+
+        plan_summary = {
+            "top_tasks_to_tackle": [_to_dict(t) for t in top_tasks],
+            "habits_to_complete": [_to_dict(h) for h in habits],
+            "scheduled_time_blocks": [_to_dict(s) for s in schedule],
+            "total_pending_tasks_count": len(all_tasks),
+        }
+        return plan_summary
+
+    def format_plan_prompt(self, session: Session) -> str:
+        plan = self.generate_plan(session)
+        lines = ["=== DETERMINISTIC DAILY PLAN PROPOSAL ==="]
+        lines.append(f"Total Pending Tasks: {plan['total_pending_tasks_count']}")
+
+        lines.append("\nTop Recommended Tasks to Work On:")
+        for t in plan["top_tasks_to_tackle"]:
+            lines.append(f" 1. Task #{t['id']}: {t['title']} [Priority {t['priority']}]")
+
+        lines.append("\nHabits to Complete Today:")
+        for h in plan["habits_to_complete"]:
+            lines.append(f" - Habit #{h['id']}: {h['name']} ({h['frequency']})")
+
+        lines.append("\nScheduled Time Blocks:")
+        for s in plan["scheduled_time_blocks"]:
+            lines.append(f" - Block #{s['id']}: {s['title']} ({s['starts_at']} - {s['ends_at']})")
+
+        return "\n".join(lines)
