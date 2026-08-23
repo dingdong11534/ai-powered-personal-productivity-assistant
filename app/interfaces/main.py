@@ -4,44 +4,52 @@ FastAPI application entrypoint.
 WHAT THIS DOES
 ---------------
 Constructs the `app` object uvicorn serves: registers the startup hook
-that creates/patches database tables, registers every domain exception ->
-HTTP status translation, and includes the task, tag, and project routers.
+that creates/patches database tables, registers every domain exception
+to HTTP status translation, and includes every router (tasks, tags,
+projects, habits, pomodoro, reminders, schedule, notifications).
 
 WHY TABLE CREATION LIVES IN A LIFESPAN HANDLER, NOT AT IMPORT TIME
 ------------------------------------------------------------------------
 `create_all_tables()` runs inside `lifespan()`, called once when the app
-actually starts serving — not as a side effect of `import
+actually starts serving, not as a side effect of `import
 app.interfaces.main`. Tests import this module (indirectly, via
 TestClient) far more often than they want tables created/patched against
 the real `data/assistant.db`; keeping creation tied to startup, combined
 with tests overriding `get_db` to point at an isolated in-memory database
 (see tests/conftest.py), means importing this module is always safe and
 side-effect-free. See app.storage.database's docstring for what
-`create_all_tables()` actually does as of Phase 1 (new tables + the
-additive `tasks.project_id` patch for pre-existing databases).
+`create_all_tables()` does. As of Phase 2 it is back to a pure
+`Base.metadata.create_all()` doing all the work: every Phase 2 table is
+brand new, so there is no existing table needing the kind of additive
+column patch Phase 1 needed for `tasks.project_id` (see
+docs/architecture.md's "Migrations" section for the full reasoning).
 
 WHY DOMAIN EXCEPTIONS ARE TRANSLATED HERE, NOT IN EACH ROUTE
 ------------------------------------------------------------------
 Routes just call a service method and let its domain exception (e.g.
-`TaskNotFoundError`, `DependencyCycleError`) propagate — they don't catch
+`TaskNotFoundError`, `DependencyCycleError`) propagate; they don't catch
 it and raise an `HTTPException` themselves. Doing every translation once,
-here, via `@app.exception_handler`, means every route that can raise a
+here, via `app.add_exception_handler`, means every route that can raise a
 given exception gets consistent status-code behavior for free, and
 adding another route later doesn't require remembering to repeat a
 try/except.
 
 STATUS CODE CHOICES
 ---------------------
-- 404 Not Found: *NotFoundError family (task/project/tag missing).
-- 400 Bad Request: SelfDependencyError — the request is invalid as
-  written, no server-side state could ever make it valid.
+- 404 Not Found: every `*NotFoundError` (task/project/tag/habit/
+  pomodoro session/reminder/schedule item/notification missing).
+- 400 Bad Request: SelfDependencyError, InvalidTimeRangeError - each
+  describes a request that's invalid as written; no server-side state
+  could ever make it valid.
 - 409 Conflict: DependencyCycleError, DuplicateTagError,
-  DuplicateDependencyError, ArchivedProjectError, UnresolvedDependencyError
-  — each describes the request conflicting with the *current state* of
-  existing data (a cycle would form, a name is taken, an edge already
-  exists, the project isn't active, a dependency isn't done yet), which
-  is what HTTP 409 means, distinct from "the request itself is malformed"
-  (400) or "nothing here" (404).
+  DuplicateDependencyError, ArchivedProjectError, UnresolvedDependencyError,
+  ArchivedHabitError, DuplicateCompletionError, SessionAlreadyEndedError
+  - each describes the request conflicting with the *current state* of
+  existing data (a cycle would form, a name is taken, an edge/completion
+  already exists, the project/habit isn't active, a dependency isn't
+  done yet, a session already ended), which is what HTTP 409 means,
+  distinct from "the request itself is malformed" (400) or "nothing
+  here" (404).
 """
 
 from __future__ import annotations
@@ -53,10 +61,20 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
+from app.interfaces.api.habits import router as habits_router
+from app.interfaces.api.notifications import router as notifications_router
+from app.interfaces.api.pomodoro import router as pomodoro_router
 from app.interfaces.api.projects import router as projects_router
+from app.interfaces.api.reminders import router as reminders_router
+from app.interfaces.api.schedule import router as schedule_router
 from app.interfaces.api.tags import router as tags_router
 from app.interfaces.api.tasks import router as tasks_router
+from app.notifications.exceptions import NotificationNotFoundError
+from app.pomodoro.exceptions import PomodoroSessionNotFoundError, SessionAlreadyEndedError
 from app.projects.exceptions import ArchivedProjectError, ProjectNotFoundError
+from app.reminders.exceptions import ReminderNotFoundError
+from app.scheduling.exceptions import InvalidTimeRangeError, ScheduleItemNotFoundError
 from app.storage.database import create_all_tables
 from app.tasks.exceptions import (
     DependencyCycleError,
@@ -87,14 +105,26 @@ def _json_error(status_code: int):
     return handler
 
 
-NOT_FOUND_EXCEPTIONS = (TaskNotFoundError, ProjectNotFoundError, TagNotFoundError)
-BAD_REQUEST_EXCEPTIONS = (SelfDependencyError,)
+NOT_FOUND_EXCEPTIONS = (
+    TaskNotFoundError,
+    ProjectNotFoundError,
+    TagNotFoundError,
+    HabitNotFoundError,
+    PomodoroSessionNotFoundError,
+    ReminderNotFoundError,
+    ScheduleItemNotFoundError,
+    NotificationNotFoundError,
+)
+BAD_REQUEST_EXCEPTIONS = (SelfDependencyError, InvalidTimeRangeError)
 CONFLICT_EXCEPTIONS = (
     DependencyCycleError,
     DuplicateTagError,
     DuplicateDependencyError,
     ArchivedProjectError,
     UnresolvedDependencyError,
+    ArchivedHabitError,
+    DuplicateCompletionError,
+    SessionAlreadyEndedError,
 )
 
 for exc_type in NOT_FOUND_EXCEPTIONS:
@@ -108,10 +138,15 @@ for exc_type in CONFLICT_EXCEPTIONS:
 app.include_router(tasks_router)
 app.include_router(tags_router)
 app.include_router(projects_router)
+app.include_router(habits_router)
+app.include_router(pomodoro_router)
+app.include_router(reminders_router)
+app.include_router(schedule_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health", tags=["health"])
 def health() -> dict[str, str]:
-    """Liveness check — not part of the task API, useful for confirming
+    """Liveness check - not part of the task API, useful for confirming
     the server is up before poking at real endpoints."""
     return {"status": "ok"}

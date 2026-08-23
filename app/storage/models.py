@@ -4,17 +4,17 @@ SQLAlchemy ORM models.
 WHAT THIS DOES
 ---------------
 Defines the database tables as Python classes: `Project`, `Task` (with
-`TaskStatus`), `Tag`, the `task_tags` association table, and
-`TaskDependency`. The remaining entities in docs/architecture.md's schema
-proposal (Habit, PomodoroSession, Reminder, ...) are added as their owning
-phase reaches them.
+`TaskStatus`), `Tag`, the `task_tags` association table, `TaskDependency`
+(Phase 0.2/1), and `Habit`/`HabitCompletion`, `PomodoroSession`,
+`Reminder`, `ScheduleItem`, `Notification` (Phase 2).
 
 WHY THESE TYPES/CONSTRAINTS, SPECIFICALLY
 ----------------------------------------------
 - `status: Mapped[TaskStatus]` mapped to a native SQL `ENUM`, not a plain
   string column: an invalid status is rejected by the column type itself.
   SQLite emulates this with a CHECK constraint under the hood, but the
-  Python-level guarantee is the same regardless of backend.
+  Python-level guarantee is the same regardless of backend. The same
+  reasoning applies to `HabitFrequency`.
 - `priority` is a plain `Integer` plus an explicit `CheckConstraint`
   (1-4), not a second enum: priority is fundamentally ordered, which an
   integer expresses directly (`priority < 3` sorts and compares
@@ -34,7 +34,10 @@ WHY THESE TYPES/CONSTRAINTS, SPECIFICALLY
   Project API never exposes a hard delete (only archive — see
   `app.projects.service`), so this is a defensive default for a
   situation the current API doesn't even allow, not something exercised
-  in normal use.
+  in normal use. `PomodoroSession.task_id` and `Reminder.task_id` and
+  `ScheduleItem.task_id` use the same `ondelete="SET NULL"` reasoning:
+  each is a historical record that should outlive the task it once
+  referenced, not be deleted alongside it.
 - `task_tags` is a plain `Table` (an association table), not a mapped
   class: it carries no data beyond the two foreign keys, so a full ORM
   class would be unused ceremony. Its composite primary key
@@ -48,6 +51,18 @@ WHY THESE TYPES/CONSTRAINTS, SPECIFICALLY
   meaningless without the task), which is different from the
   `project_id` case above where the *other* side of the relationship
   (the task) must survive.
+- `HabitCompletion.habit_id` uses `ondelete="CASCADE"` (not `SET NULL`)
+  because a completion record is meaningless without its habit — unlike
+  a task reference on a Pomodoro session or reminder, there's no
+  "orphaned but still useful" reading of a completion whose habit no
+  longer exists. `UniqueConstraint("habit_id", "completed_date")` is the
+  DB-level backstop behind `HabitService`'s duplicate-completion check —
+  see that module's docstring for why `completed_date` is a separate,
+  explicitly-set column rather than a derived/expression index.
+- `ScheduleItem` has a `CheckConstraint("ends_at > starts_at")` — the
+  same defense-in-depth pattern as `priority`'s range check: the service
+  layer validates this too (see `app.scheduling.service`), but a bad row
+  still can't be written even by code that bypasses the service.
 
 HOW TO TEST
 ------------
@@ -59,14 +74,17 @@ to how these models are actually used.
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Table,
+    UniqueConstraint,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Integer, String, Text, func
@@ -235,3 +253,198 @@ class TaskDependency(Base):
             f"TaskDependency(task_id={self.task_id!r}, "
             f"depends_on_task_id={self.depends_on_task_id!r})"
         )
+
+
+class HabitFrequency(str, enum.Enum):
+    """How often a habit is expected to be completed. Drives both
+    `target_count`'s meaning ("N times per period") and how
+    `app.habits.streak` groups completions into periods."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class Habit(Base):
+    """Something the user is tracking recurring completions of.
+
+    No hard-delete is exposed (see app.habits.service) — only archiving,
+    the same pattern as Project. `archived_at` blocks *new* completions
+    (see HabitService) but never touches existing `HabitCompletion` rows,
+    for the same "don't silently destroy history" reasoning as Project's
+    tasks.
+    """
+
+    __tablename__ = "habits"
+    __table_args__ = (
+        CheckConstraint("target_count >= 1 AND target_count <= 100", name="ck_habits_target_count_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    frequency: Mapped[HabitFrequency] = mapped_column(
+        SAEnum(HabitFrequency, name="habit_frequency"), nullable=False
+    )
+    target_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    completions: Mapped[list["HabitCompletion"]] = relationship(
+        back_populates="habit", order_by="HabitCompletion.completed_at"
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return f"Habit(id={self.id!r}, name={self.name!r}, frequency={self.frequency!r})"
+
+
+class HabitCompletion(Base):
+    """One recorded instance of a habit being done.
+
+    This table is the *authoritative* record — streaks and statistics
+    are always computed from these rows (see app.habits.streak), never
+    from a stored counter, so they can be recomputed and are never at
+    risk of drifting out of sync with reality.
+
+    `completed_date` (a plain `Date`, separate from the full-precision
+    `completed_at` timestamp) exists solely to support
+    `UniqueConstraint("habit_id", "completed_date")` — the DB-level
+    backstop for "no duplicate completion on the same calendar day"
+    (see HabitService.record_completion for the matching service-level
+    check, which runs first). It's set once at creation from
+    `completed_at.date()` and never updated, so there's no risk of it
+    drifting from `completed_at` — an explicit stored column was chosen
+    over a SQL expression index (e.g. `date(completed_at)`) to keep this
+    to patterns already used elsewhere in the project (plain columns,
+    plain UniqueConstraint) rather than introducing expression indexes
+    for one table.
+    """
+
+    __tablename__ = "habit_completions"
+    __table_args__ = (
+        UniqueConstraint("habit_id", "completed_date", name="uq_habit_completion_per_day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    habit_id: Mapped[int] = mapped_column(
+        ForeignKey("habits.id", ondelete="CASCADE"), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    completed_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    habit: Mapped[Habit] = relationship(back_populates="completions")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return f"HabitCompletion(habit_id={self.habit_id!r}, completed_date={self.completed_date!r})"
+
+
+class PomodoroSession(Base):
+    """A single focus session, optionally associated with a Task.
+
+    `ended_at` is nullable — a session is "in progress" while it's null.
+    `duration_seconds` is computed and stored at the moment a session
+    ends (see app.pomodoro.service), rather than always computed on read
+    from `ended_at - started_at`, so a session's recorded duration is
+    fixed at the instant it's known, and reading history doesn't require
+    redoing that arithmetic on every row every time.
+    """
+
+    __tablename__ = "pomodoro_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    interrupted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return (
+            f"PomodoroSession(id={self.id!r}, task_id={self.task_id!r}, "
+            f"ended={self.ended_at is not None})"
+        )
+
+
+class Reminder(Base):
+    """A one-time reminder, optionally tied to a Task.
+
+    `created_at` isn't in the brief's suggested field list but is added
+    for consistency with every other entity in this project — cheap to
+    include, useful for audit/ordering, and it would be an odd asymmetry
+    to omit it here alone.
+    """
+
+    __tablename__ = "reminders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    remind_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    fired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return f"Reminder(id={self.id!r}, remind_at={self.remind_at!r}, fired={self.fired_at is not None})"
+
+
+class ScheduleItem(Base):
+    """A block of time on the user's local schedule, optionally tied to
+    a Task. `CheckConstraint("ends_at > starts_at")` is the DB-level
+    backstop behind ScheduleService's own validation — see that
+    module's docstring."""
+
+    __tablename__ = "schedule_items"
+    __table_args__ = (CheckConstraint("ends_at > starts_at", name="ck_schedule_items_valid_range"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return f"ScheduleItem(id={self.id!r}, title={self.title!r})"
+
+
+class Notification(Base):
+    """An in-app notification record.
+
+    Deliberately just a data record — see app.notifications's package
+    docstring for why any OS-level desktop notification dispatch is kept
+    out of the core domain and out of scope for this phase.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        doc="Free-form origin label (e.g. 'reminder', 'habit'). Not a "
+        "foreign key to anything — Phase 2 does not wire reminders or "
+        "habits to automatically create notifications (see "
+        "docs/architecture.md); this field just leaves room for a "
+        "future integration to say where a notification came from.",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return f"Notification(id={self.id!r}, title={self.title!r}, read={self.read_at is not None})"

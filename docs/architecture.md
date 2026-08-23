@@ -374,7 +374,7 @@ function the way an added nullable column is; they need real up/down
 migration scripts with a tracked revision history. `alembic` is already
 present, commented out, in `requirements.txt` for exactly that moment.
 
-## 6. Known risks / technical unknowns going into Phase 2
+## 6. Known risks / technical unknowns going into Phase 2 (as identified at the end of Phase 1)
 
 - **Alembic adoption debt.** Every Phase 1+ schema change so far has
   been additive (new tables, one new nullable column) and handled by the
@@ -406,3 +406,250 @@ present, commented out, in `requirements.txt` for exactly that moment.
   Phase 0.2 — still an open design question, now slightly more concrete
   since dependencies exist: would a recurring task's dependencies reset
   each cycle, or only apply to the first instance?).
+
+## 7. Phase 2 — habit, time, and reminder management (implemented)
+
+Adds five new entities around the existing Task system: `Habit` +
+`HabitCompletion`, `PomodoroSession`, `Reminder`, `ScheduleItem`, and
+`Notification`. No AI, voice, frontend, or external integrations — pure
+backend domain logic and API, same as every prior phase.
+
+### 7.1 Package structure: one domain package per resource, not one "scheduling" package
+
+Phase 0's original architecture sketch grouped Pomodoro, Reminders, and
+Scheduling under a single `app.scheduling` package. That's been
+superseded: Phase 2 gives each its own top-level package
+(`app.habits`, `app.pomodoro`, `app.reminders`, `app.scheduling` —
+repurposed for `ScheduleItem` only — and `app.notifications`), mirroring
+the pattern already established by `app.projects` and `app.tasks`'s
+internal tag/dependency split. Reasoning: the Phase 2 brief itself asks
+for four independent route groups (`/pomodoro`, `/reminders`,
+`/schedule`, `/notifications`), each with its own CRUD and its own
+business rules; cramming three unrelated aggregates into one package
+would just be the "giant manager class" anti-pattern one level up, at
+the package instead of the class level.
+
+### 7.2 Habit tracking
+
+`Habit(id, name, frequency, target_count, created_at, archived_at)` and
+`HabitCompletion(id, habit_id, completed_at, completed_date)`.
+
+**The completion history is authoritative — there is no stored streak
+number anywhere.** Every streak/statistics read fetches
+`HabitCompletion` rows and recomputes from scratch (`app.habits.streak`,
+pure functions, no database) rather than incrementing/decrementing a
+cached counter. This was an explicit requirement in the brief and is
+worth restating as a design principle: a cached streak can silently
+drift from reality (a missed decrement, a bug in an edge case); a
+recomputed one cannot, by construction, be wrong relative to the data
+it's computed from — the only way to get a wrong streak is a wrong
+*algorithm*, not stale cached state. The trade-off is recomputing on
+every read instead of an O(1) lookup, which is the right trade at a
+single local user's data volume.
+
+**Streak algorithm.** A habit's timeline is divided into periods by
+frequency (calendar day / ISO week / calendar month). A period is
+"satisfied" if it has >= `target_count` completions. The current streak
+counts consecutive satisfied periods walking backward from today, with
+one exception: today's own period doesn't break the streak if
+unsatisfied (it may simply not be over yet) — every period before
+today's does need to be satisfied, or the streak stops there. Verified
+against 9+ scenarios (consecutive days, a gap breaking the streak,
+today-not-done-yet not breaking it, multi-week/month periods, a
+year-boundary month rollover, and a defensive guard against
+`today < created_date`) before being wired into `HabitService` — see
+`tests/test_habit_streak.py`, which exercises the pure function
+directly with no database.
+
+**Duplicate completions**: rejected per calendar day, regardless of
+frequency (`DuplicateCompletionError`, HTTP 409) — a weekly habit with
+`target_count=3` still only gets one completion credited per day, not
+three from the same day logged three times. Enforced twice: a
+service-level check before insert (clear domain error), and a DB-level
+`UniqueConstraint("habit_id", "completed_date")` as backstop —
+`completed_date` is a plain stored column (set once from
+`completed_at.date()`, never updated) rather than a SQL expression
+index, to keep this to patterns already used elsewhere in the project
+(see `app.storage.models.HabitCompletion`'s docstring for the fuller
+reasoning).
+
+**Archived habits**: same rule as archived Projects — archiving blocks
+*new* completions (`ArchivedHabitError`, HTTP 409) but never hides or
+alters existing history; a habit's completions, streak, and statistics
+remain fully readable after archiving.
+
+**Invalid `target_count`**: `CheckConstraint(1-100)` at the DB layer,
+`Field(ge=1, le=100)` in the Pydantic schema. `frequency` is a native
+enum column — an invalid value is a 422 from Pydantic before it ever
+reaches the service.
+
+### 7.3 Pomodoro sessions
+
+`PomodoroSession(id, task_id, started_at, ended_at, interrupted,
+duration_seconds)`. `task_id` uses `ondelete="SET NULL"` — a session is
+a historical record that should outlive the task it was for, not be
+deleted alongside it (same reasoning as `Task.project_id`).
+
+A session can only be ended once (`SessionAlreadyEndedError`, HTTP 409).
+"End normally" and "interrupt" are the same operation
+(`POST /pomodoro/{id}/end`) differing only in an `interrupted: bool`
+flag in the body — not two endpoints — since both are the identical
+state transition (`ended_at` gets set, `duration_seconds` gets
+computed) and duplicating the endpoint for a boolean difference would
+be exactly the kind of "duplicate abstraction" the brief asks to avoid.
+`duration_seconds` is computed and stored at end time (not recomputed
+from `ended_at - started_at` on every read).
+
+### 7.4 Reminders
+
+`Reminder(id, task_id, remind_at, message, fired_at, created_at)`.
+`created_at` isn't in the brief's suggested field list but was added
+for consistency with every other entity in the project.
+
+**Past `remind_at` is accepted, not rejected.** A reminder is just a
+timestamp + message; rejecting a past time would only get in the way of
+legitimate use (backfilling, testing, clock skew), and "is this
+overdue" is already answered separately by `list_due_reminders`.
+
+**Firing is idempotent.** `mark_fired` on an already-fired reminder is a
+no-op that returns the current state, not an error — there is no
+`ReminderAlreadyFiredError`. This is deliberate: the eventual caller of
+this method is an automated dispatch/polling process (not built this
+phase — see 7.7), and such a process needs to be safe to call twice on
+the same reminder (e.g. after a retry) without crashing.
+
+`GET /reminders?due=true` and `?upcoming=true` are the "identify due
+reminders" / "list upcoming reminders" capabilities from the brief,
+implemented as query parameters rather than new top-level routes, to
+stay close to the brief's suggested route shape
+(`/reminders`, `/reminders/{id}`).
+
+### 7.5 Scheduling
+
+`ScheduleItem(id, title, starts_at, ends_at, task_id)`, with a DB
+`CheckConstraint("ends_at > starts_at")` behind the same validation in
+`ScheduleService`.
+
+**Conflicts are detected, not blocked.** `create_schedule_item` does
+not call the conflict-detection query and does not reject an
+overlapping item — this mirrors how real calendar tools behave (Google
+Calendar, Outlook, etc. all allow double-booking and just surface it,
+rather than refusing the second event). Overlap is frequently
+intentional (a task block inside a longer meeting, a tentative
+placeholder), and a hard block would need an escape hatch ("create
+anyway") the brief didn't ask for. `ScheduleService.find_conflicts` is
+its own directly-testable method and is reachable via
+`GET /schedule/conflicts?starts_at=&ends_at=` as a query a caller can
+run before or after creating something. If a stricter policy is wanted
+later, that's a small, deliberate change to `create_schedule_item`, not
+a default assumed now.
+
+**Route-ordering note**: `/schedule/conflicts` is registered *before*
+`/schedule/{item_id}` in `app/interfaces/api/schedule.py`. FastAPI
+matches routes in registration order, and `{item_id}` would otherwise
+greedily match the literal path segment "conflicts" as a string before
+its own `int` conversion fails — a real gotcha, called out explicitly
+in that file's module docstring and covered by
+`tests/test_schedule_api.py::test_conflicts_endpoint_reachable_and_correct`.
+
+### 7.6 Notifications
+
+`Notification(id, title, body, created_at, read_at, source)`. The
+thinnest service in the project — creation and read/unread toggling
+(`mark_read`/`mark_unread`, both idempotent, same reasoning as
+`Reminder.mark_fired`) have no business rules beyond "does it exist".
+
+**Deliberately just a data record.** No OS-level desktop notification
+dispatch (Linux D-Bus/`notify-send`, Windows toast, macOS
+`NSUserNotification`) exists anywhere in this phase — the brief
+explicitly excludes it. `app.notifications`'s package docstring
+documents the intended seam: a future adapter belongs in
+`app.integrations`, reading `Notification` rows and dispatching them to
+the OS, kept separate so the core domain never depends on which
+operating system the app happens to run on.
+
+**No automatic Reminder -> Notification linkage.** Firing a reminder
+does not create a Notification, and nothing polls for due reminders
+automatically — see 7.8 below. Wiring that up is a natural next step but
+was deliberately left out this phase to avoid adding a background
+scheduler/polling loop, which is a meaningfully different kind of
+component (a long-running process, not a request-scoped one) than
+anything built so far, and wasn't asked for.
+
+### 7.7 New API structure
+
+```
+/habits                             POST, GET
+/habits/{id}                        GET, PUT
+/habits/{id}/archive                 POST
+/habits/{id}/complete                POST
+/habits/{id}/history                 GET
+/habits/{id}/statistics              GET
+
+/pomodoro                           POST, GET (+ ?task_id filter)
+/pomodoro/{id}                      GET
+/pomodoro/{id}/end                   POST ({"interrupted": bool})
+
+/reminders                          POST, GET (+ ?due / ?upcoming)
+/reminders/{id}                     GET, PUT, DELETE
+/reminders/{id}/fire                 POST
+
+/schedule                           POST, GET
+/schedule/conflicts                  GET (?starts_at=&ends_at=&exclude_id=)
+/schedule/{id}                      GET, PUT, DELETE
+
+/notifications                      POST, GET (+ ?unread_only)
+/notifications/{id}                 GET
+/notifications/{id}/read             POST
+/notifications/{id}/unread           POST
+```
+
+### 7.8 Migrations: no patch needed this phase
+
+Every Phase 2 table (`habits`, `habit_completions`, `pomodoro_sessions`,
+`reminders`, `schedule_items`, `notifications`) is brand new — nothing
+about any *existing* table (`tasks`, `projects`, `tags`, ...) changed
+shape. `Base.metadata.create_all()` creates missing tables and leaves
+existing ones alone, which is exactly sufficient here: unlike Phase 1
+(which added a column to the already-existing `tasks` table and needed
+the narrow additive patch in `app.storage.database`), there is nothing
+for that patch — or Alembic — to do this time. `create_all_tables()`
+runs its Phase 1 patch check regardless (it's a cheap, idempotent
+no-op when the column already exists), so nothing needed to change
+there either.
+
+This doesn't retire the Alembic question — see the "Known risks going
+into Phase 3" list below and section 5.8 above for the still-standing
+trigger condition (the first non-additive schema change).
+
+## 8. Known limitations / technical debt going into Phase 3
+
+- **No background scheduler/dispatcher.** `list_due_reminders` and
+  `mark_fired` exist, but nothing calls them automatically — a reminder
+  becoming "due" doesn't do anything on its own. The same is true for
+  turning a fired reminder into a `Notification`. Building this needs a
+  genuinely different kind of component (a long-running polling loop or
+  an async task scheduler), which is a deliberate scope boundary for
+  Phase 2, not an oversight.
+- **No desktop notification dispatch**, per the brief — `app.notifications`
+  is data-only; see 7.6 for the intended future seam in
+  `app.integrations`.
+- **Schedule conflicts are informational only** — see 7.5. Revisit if a
+  stricter double-booking policy turns out to be wanted.
+- **Habit statistics recompute from full history on every read.** Fine
+  at a single local user's scale; would need indexing/caching
+  consideration if `HabitCompletion` rows grew very large (years of
+  daily data across many habits) — not a concern yet.
+- **Alembic adoption debt persists** (carried over from Phase 1, still
+  unaddressed — Phase 2 didn't need it either; see 5.8 and 7.8 for the
+  exact trigger condition).
+- **`TaskDependencyRepository.get_unresolved_dependencies` is one-hop by
+  design** (carried over from Phase 1, still accurate).
+- **Tag/dependency N+1 queries** (carried over from Phase 1, still
+  accurate — now joined by Habit completion history and Pomodoro/
+  Reminder/ScheduleItem lists as other places that fetch per-row without
+  eager loading; none of these are a problem yet at current data
+  volumes).
+- **SQLite concurrency** (carried over from Phase 0.2 — a background
+  scheduler, whenever it's built, is exactly the point this becomes
+  concrete rather than theoretical).
