@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal Productivity Assistant</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </div>
+      <span>Assistant</span>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <button data-target="dashboard" class="active">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          Dashboard
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="tasks">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Tasks
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="projects">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/></svg>
+          Projects
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="habits">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Habits
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="pomodoro">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Pomodoro
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="schedule">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+          Schedule
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="reminders">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Reminders
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="notifications">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          Notifications
+        </button>
+      </li>
+      <li class="nav-item">
+        <button data-target="settings">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </button>
+      </li>
+    </ul>
+  </aside>
+
+  <!-- Main Section -->
+  <div class="main-wrapper">
+    <!-- Topbar -->
+    <header class="topbar">
+      <h1 class="topbar-title" id="page-title">Dashboard</h1>
+      <div class="topbar-actions">
+        <div class="search-box">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+          <input type="text" id="global-search-input" placeholder="Search tasks...">
+        </div>
+        <button class="btn-icon" id="theme-toggle-btn" title="Toggle Theme">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+        <button class="btn-icon" id="topbar-notification-btn" title="Notifications">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="badge-dot" id="unread-notification-dot" style="display: none;"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Dynamic Content Area -->
+    <main class="content-area">
+
+      <!-- 1. Dashboard View -->
+      <section id="section-dashboard" class="view-section active">
+        <div class="grid-dashboard">
+          <div class="card">
+            <div class="card-title">Tasks Pending</div>
+            <div class="card-value" id="dash-tasks-pending-count">0</div>
+            <div class="card-desc">Active to-do items</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Habit Trackers</div>
+            <div class="card-value" id="dash-habits-active-count">0</div>
+            <div class="card-desc">Active habits tracked</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Upcoming Reminders</div>
+            <div class="card-value" id="dash-reminders-due-count">0</div>
+            <div class="card-desc">Due or upcoming</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Schedule Items</div>
+            <div class="card-value" id="dash-schedule-count">0</div>
+            <div class="card-desc">Scheduled for today</div>
+          </div>
+        </div>
+
+        <div class="grid-2col">
+          <div>
+            <div class="page-header">
+              <h3>Today's Tasks & Deadlines</h3>
+              <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">+ New Task</button>
+            </div>
+            <div class="item-list" id="dash-todays-tasks-list">
+              <div class="card"><p style="color:var(--text-muted);">Loading tasks...</p></div>
+            </div>
+          </div>
+          <div>
+            <div class="page-header">
+              <h3>Active Reminders & Conflicts</h3>
+            </div>
+            <div id="dash-conflicts-banner" style="margin-bottom:1rem;"></div>
+            <div class="item-list" id="dash-reminders-list">
+              <div class="card"><p style="color:var(--text-muted);">Loading reminders...</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Tasks View -->
+      <section id="section-tasks" class="view-section">
+        <div class="page-header">
+          <h2>Tasks Management</h2>
+          <button class="btn btn-primary" onclick="openCreateTaskModal()">+ Create Task</button>
+        </div>
+
+        <div class="filter-bar">
+          <div class="filter-group">
+            <label>Status:</label>
+            <select id="task-filter-status" onchange="loadTasksView()">
+              <option value="">All Statuses</option>
+              <option value="todo">Todo</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Priority:</label>
+            <select id="task-filter-priority" onchange="loadTasksView()">
+              <option value="">All Priorities</option>
+              <option value="1">1 - Critical</option>
+              <option value="2">2 - High</option>
+              <option value="3">3 - Medium</option>
+              <option value="4">4 - Low</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Project:</label>
+            <select id="task-filter-project" onchange="loadTasksView()">
+              <option value="">All Projects</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Tag:</label>
+            <select id="task-filter-tag" onchange="loadTasksView()">
+              <option value="">All Tags</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <button class="btn btn-secondary btn-sm" onclick="openTagManagerModal()">Manage Tags</button>
+          </div>
+        </div>
+
+        <div class="item-list" id="tasks-list-container">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- 3. Projects View -->
+      <section id="section-projects" class="view-section">
+        <div class="page-header">
+          <h2>Projects</h2>
+          <div style="display:flex; gap:1rem; align-items:center;">
+            <label style="font-size:0.9rem; color:var(--text-secondary);">
+              <input type="checkbox" id="projects-include-archived" onchange="loadProjectsView()"> Include Archived
+            </label>
+            <button class="btn btn-primary" onclick="openCreateProjectModal()">+ New Project</button>
+          </div>
+        </div>
+        <div class="grid-dashboard" id="projects-grid-container">
+          <!-- Populated by JS -->
+        </div>
+        <div id="project-tasks-detail" style="margin-top: 2rem; display: none;">
+          <div class="page-header">
+            <h3 id="project-detail-title">Project Tasks</h3>
+            <button class="btn btn-secondary btn-sm" onclick="hideProjectDetail()">Close Detail</button>
+          </div>
+          <div class="item-list" id="project-tasks-list"></div>
+        </div>
+      </section>
+
+      <!-- 4. Habits View -->
+      <section id="section-habits" class="view-section">
+        <div class="page-header">
+          <h2>Habit Trackers</h2>
+          <div style="display:flex; gap:1rem; align-items:center;">
+            <label style="font-size:0.9rem; color:var(--text-secondary);">
+              <input type="checkbox" id="habits-include-archived" onchange="loadHabitsView()"> Include Archived
+            </label>
+            <button class="btn btn-primary" onclick="openCreateHabitModal()">+ New Habit</button>
+          </div>
+        </div>
+        <div class="item-list" id="habits-list-container">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- 5. Pomodoro View -->
+      <section id="section-pomodoro" class="view-section">
+        <div class="page-header">
+          <h2>Pomodoro Focus Sessions</h2>
+        </div>
+        <div class="grid-2col">
+          <div class="card" style="text-align: center;">
+            <h3>Active Focus Timer</h3>
+            <div class="pomodoro-clock" id="pomodoro-timer-display">25:00</div>
+            <p id="pomodoro-status-text" class="card-desc">No active session</p>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
+              <button class="btn btn-primary" id="pomo-start-btn" onclick="startPomodoroSession()">Start Focus Session</button>
+              <button class="btn btn-danger" id="pomo-end-btn" onclick="endPomodoroSession(false)" style="display:none;">Complete Session</button>
+              <button class="btn btn-secondary" id="pomo-interrupt-btn" onclick="endPomodoroSession(true)" style="display:none;">Interrupt</button>
+            </div>
+          </div>
+          <div>
+            <h3>Recent Sessions</h3>
+            <div class="item-list" id="pomodoro-history-list" style="margin-top: 1rem;">
+              <!-- History -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Schedule View -->
+      <section id="section-schedule" class="view-section">
+        <div class="page-header">
+          <h2>Local Schedule & Time Blocks</h2>
+          <button class="btn btn-primary" onclick="openCreateScheduleModal()">+ Schedule Block</button>
+        </div>
+        <div id="schedule-conflicts-notice" style="margin-bottom: 1rem;"></div>
+        <div class="item-list" id="schedule-list-container">
+          <!-- Schedule Items -->
+        </div>
+      </section>
+
+      <!-- 7. Reminders View -->
+      <section id="section-reminders" class="view-section">
+        <div class="page-header">
+          <h2>Reminders</h2>
+          <button class="btn btn-primary" onclick="openCreateReminderModal()">+ New Reminder</button>
+        </div>
+        <div class="item-list" id="reminders-list-container">
+          <!-- Reminders list -->
+        </div>
+      </section>
+
+      <!-- 8. Notifications View -->
+      <section id="section-notifications" class="view-section">
+        <div class="page-header">
+          <h2>Notifications</h2>
+          <div style="display:flex; gap:1rem;">
+            <label style="font-size:0.9rem; color:var(--text-secondary);">
+              <input type="checkbox" id="notifications-unread-only" onchange="loadNotificationsView()"> Unread Only
+            </label>
+          </div>
+        </div>
+        <div class="item-list" id="notifications-list-container">
+          <!-- Notifications -->
+        </div>
+      </section>
+
+      <!-- 9. Settings View -->
+      <section id="section-settings" class="view-section">
+        <div class="page-header">
+          <h2>Settings & Preferences</h2>
+        </div>
+        <div class="card" style="max-width: 600px;">
+          <h3>User Interface Preferences</h3>
+          <div class="form-group" style="margin-top: 1rem;">
+            <label>Color Theme</label>
+            <select id="setting-theme-select" onchange="changeTheme(this.value)">
+              <option value="dark">Dark Theme (Default)</option>
+              <option value="light">Light Theme</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Default Pomodoro Duration (Minutes)</label>
+            <input type="number" value="25" disabled>
+            <span style="font-size:0.8rem; color:var(--text-muted);">Fixed to 25 minutes per domain rules.</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Reusable Modals -->
+
+  <!-- Task Modal (Create / Edit) -->
+  <div class="modal-overlay" id="task-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="task-modal-title">Create Task</h3>
+        <button class="btn-icon" onclick="closeModal('task-modal')">&times;</button>
+      </div>
+      <form id="task-form" onsubmit="handleTaskFormSubmit(event)">
+        <input type="hidden" id="task-form-id">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="task-form-title" required placeholder="Task title">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="task-form-desc" rows="3" placeholder="Optional details"></textarea>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+          <div class="form-group">
+            <label>Status</label>
+            <select id="task-form-status">
+              <option value="todo">Todo</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Priority</label>
+            <select id="task-form-priority">
+              <option value="1">1 - Critical</option>
+              <option value="2" selected>2 - High</option>
+              <option value="3">3 - Medium</option>
+              <option value="4">4 - Low</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+          <div class="form-group">
+            <label>Project</label>
+            <select id="task-form-project">
+              <option value="">None</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Deadline</label>
+            <input type="datetime-local" id="task-form-deadline">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('task-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Project Modal -->
+  <div class="modal-overlay" id="project-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="project-modal-title">New Project</h3>
+        <button class="btn-icon" onclick="closeModal('project-modal')">&times;</button>
+      </div>
+      <form id="project-form" onsubmit="handleProjectFormSubmit(event)">
+        <input type="hidden" id="project-form-id">
+        <div class="form-group">
+          <label>Project Name *</label>
+          <input type="text" id="project-form-name" required placeholder="Project name">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="project-form-desc" rows="3" placeholder="Project overview"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Color Tag</label>
+          <input type="text" id="project-form-color" placeholder="#6366f1 or blue">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('project-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Habit Modal -->
+  <div class="modal-overlay" id="habit-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Create Habit Tracker</h3>
+        <button class="btn-icon" onclick="closeModal('habit-modal')">&times;</button>
+      </div>
+      <form id="habit-form" onsubmit="handleHabitFormSubmit(event)">
+        <div class="form-group">
+          <label>Habit Name *</label>
+          <input type="text" id="habit-form-name" required placeholder="e.g. Drink 2L water">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+          <div class="form-group">
+            <label>Frequency</label>
+            <select id="habit-form-frequency">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Target Count / Period</label>
+            <input type="number" id="habit-form-target" value="1" min="1" max="100" required>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('habit-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Habit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Schedule Modal -->
+  <div class="modal-overlay" id="schedule-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="schedule-modal-title">Schedule Item</h3>
+        <button class="btn-icon" onclick="closeModal('schedule-modal')">&times;</button>
+      </div>
+      <form id="schedule-form" onsubmit="handleScheduleFormSubmit(event)">
+        <input type="hidden" id="schedule-form-id">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="schedule-form-title" required placeholder="Meeting / Work block title">
+        </div>
+        <div class="form-group">
+          <label>Starts At *</label>
+          <input type="datetime-local" id="schedule-form-start" required>
+        </div>
+        <div class="form-group">
+          <label>Ends At *</label>
+          <input type="datetime-local" id="schedule-form-end" required>
+        </div>
+        <div class="form-group">
+          <label>Associated Task (Optional)</label>
+          <select id="schedule-form-task">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('schedule-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Schedule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reminder Modal -->
+  <div class="modal-overlay" id="reminder-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="reminder-modal-title">New Reminder</h3>
+        <button class="btn-icon" onclick="closeModal('reminder-modal')">&times;</button>
+      </div>
+      <form id="reminder-form" onsubmit="handleReminderFormSubmit(event)">
+        <input type="hidden" id="reminder-form-id">
+        <div class="form-group">
+          <label>Message *</label>
+          <input type="text" id="reminder-form-message" required placeholder="Reminder note">
+        </div>
+        <div class="form-group">
+          <label>Remind At *</label>
+          <input type="datetime-local" id="reminder-form-time" required>
+        </div>
+        <div class="form-group">
+          <label>Associated Task (Optional)</label>
+          <select id="reminder-form-task">
+            <option value="">None</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('reminder-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Reminder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Task Dependency & Tags Modal -->
+  <div class="modal-overlay" id="task-deps-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Task Dependencies & Tags</h3>
+        <button class="btn-icon" onclick="closeModal('task-deps-modal')">&times;</button>
+      </div>
+      <input type="hidden" id="deps-task-id">
+      
+      <div style="margin-bottom: 1.5rem;">
+        <h4>Attached Tags</h4>
+        <div id="deps-tags-list" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin:0.5rem 0 1rem 0;"></div>
+        <form onsubmit="handleAttachTagSubmit(event)" style="display:flex; gap:0.5rem;">
+          <select id="deps-tag-select" required style="flex:1;"><option value="">Select Tag</option></select>
+          <button type="submit" class="btn btn-secondary btn-sm">Attach Tag</button>
+        </form>
+      </div>
+
+      <hr style="border-color:var(--border-color); margin:1rem 0;">
+
+      <div>
+        <h4>Direct Dependencies</h4>
+        <div id="deps-list" class="item-list" style="margin:0.5rem 0 1rem 0;"></div>
+        <form onsubmit="handleAddDependencySubmit(event)" style="display:flex; gap:0.5rem;">
+          <select id="deps-task-select" required style="flex:1;"><option value="">Select Task</option></select>
+          <button type="submit" class="btn btn-secondary btn-sm">Add Dependency</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tag Manager Modal -->
+  <div class="modal-overlay" id="tag-manager-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Tag Manager</h3>
+        <button class="btn-icon" onclick="closeModal('tag-manager-modal')">&times;</button>
+      </div>
+      <form onsubmit="handleCreateTagSubmit(event)" style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+        <input type="text" id="new-tag-name" placeholder="New tag name" required style="flex:1;">
+        <button type="submit" class="btn btn-primary btn-sm">Create Tag</button>
+      </form>
+      <div id="tag-manager-list" style="display:flex; gap:0.5rem; flex-wrap:wrap;"></div>
+    </div>
+  </div>
+
+  <!-- Global Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

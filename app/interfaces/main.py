@@ -54,11 +54,13 @@ STATUS CODE CHOICES
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
@@ -143,6 +145,20 @@ app.include_router(pomodoro_router)
 app.include_router(reminders_router)
 app.include_router(schedule_router)
 app.include_router(notifications_router)
+
+# Phase 3: Static Files and Web UI Dashboard
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def read_index() -> FileResponse:
+    """Serve the Phase 3 web UI index page."""
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if not os.path.exists(index_path):
+        return JSONResponse(status_code=404, content={"detail": "Index HTML not found"})
+    return FileResponse(index_path)
 
 
 @app.get("/health", tags=["health"])
