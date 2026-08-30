@@ -6,17 +6,20 @@ from sqlalchemy.orm import Session
 
 from app.ai.tools.implementations import _to_dict
 from app.habits.service import HabitService
+from app.memories.service import MemoryService
 from app.scheduling.service import ScheduleService
+from app.storage.models import MemoryCategory
 from app.tasks.service import TaskService
 
 
 class DailyPlanner:
-    """Computes a deterministic daily plan based on system state."""
+    """Computes a deterministic daily plan based on system state and user preferences."""
 
     def generate_plan(self, session: Session) -> dict[str, Any]:
         task_svc = TaskService(session)
         habit_svc = HabitService(session)
         sched_svc = ScheduleService(session)
+        memory_svc = MemoryService(session)
 
         all_tasks = task_svc.list_tasks(completed=False)
         # Sort by priority ascending (1 = Critical), then deadline nullable
@@ -26,10 +29,15 @@ class DailyPlanner:
         habits = habit_svc.list_habits(include_archived=False)
         schedule = sched_svc.list_schedule_items()
 
+        prefs = memory_svc.list_memories(category=MemoryCategory.PREFERENCE)
+        routines = memory_svc.list_memories(category=MemoryCategory.ROUTINE)
+
         plan_summary = {
             "top_tasks_to_tackle": [_to_dict(t) for t in top_tasks],
             "habits_to_complete": [_to_dict(h) for h in habits],
             "scheduled_time_blocks": [_to_dict(s) for s in schedule],
+            "user_preferences": [_to_dict(p) for p in prefs],
+            "user_routines": [_to_dict(r) for r in routines],
             "total_pending_tasks_count": len(all_tasks),
         }
         return plan_summary
@@ -51,4 +59,12 @@ class DailyPlanner:
         for s in plan["scheduled_time_blocks"]:
             lines.append(f" - Block #{s['id']}: {s['title']} ({s['starts_at']} - {s['ends_at']})")
 
+        if plan["user_preferences"] or plan["user_routines"]:
+            lines.append("\nUser Preferences & Routines to Consider:")
+            for p in plan["user_preferences"]:
+                lines.append(f" - [Pref] {p['content']}")
+            for r in plan["user_routines"]:
+                lines.append(f" - [Routine] {r['content']}")
+
         return "\n".join(lines)
+

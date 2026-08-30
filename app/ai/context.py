@@ -1,4 +1,4 @@
-"""Context building module for selective retrieval of user state."""
+"""Context building module for selective retrieval of user state and relevant memory context."""
 
 from datetime import datetime
 from typing import Any
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.tools.implementations import _to_dict
 from app.habits.service import HabitService
+from app.memories.service import MemoryService
 from app.scheduling.service import ScheduleService
 from app.tasks.service import TaskService
 
@@ -14,10 +15,11 @@ from app.tasks.service import TaskService
 class ContextBuilder:
     """Deliberately selects relevant structured information for the AI prompt."""
 
-    def build_context(self, session: Session) -> dict[str, Any]:
+    def build_context(self, session: Session, query: str | None = None) -> dict[str, Any]:
         task_svc = TaskService(session)
         habit_svc = HabitService(session)
         sched_svc = ScheduleService(session)
+        memory_svc = MemoryService(session)
 
         # High priority tasks (1=Critical, 2=High)
         high_priority = task_svc.list_tasks(completed=False)
@@ -44,15 +46,19 @@ class ContextBuilder:
         # Today's schedule
         schedule_items = sched_svc.list_schedule_items()
 
+        # Relevant memories
+        relevant_mems = memory_svc.retrieve_relevant_memories(query=query, limit=5)
+
         return {
             "high_priority_tasks": [_to_dict(t) for t in high_priority],
             "upcoming_deadlines": [_to_dict(t) for t in deadlines],
             "habits": habit_summary,
             "schedule_items": [_to_dict(s) for s in schedule_items],
+            "relevant_memories": [_to_dict(m) for m in relevant_mems],
         }
 
-    def format_context_prompt(self, session: Session) -> str:
-        ctx = self.build_context(session)
+    def format_context_prompt(self, session: Session, query: str | None = None) -> str:
+        ctx = self.build_context(session, query=query)
         lines = ["=== CURRENT SYSTEM CONTEXT ==="]
 
         lines.append("\n-- High Priority Pending Tasks --")
@@ -83,4 +89,12 @@ class ContextBuilder:
         else:
             lines.append("No scheduled blocks today.")
 
+        lines.append("\n-- Relevant Long-Term Memories --")
+        if ctx["relevant_memories"]:
+            for m in ctx["relevant_memories"]:
+                lines.append(f"- [#{m['id']}] ({m['category']}) {m['content']}")
+        else:
+            lines.append("No relevant memories stored.")
+
         return "\n".join(lines)
+

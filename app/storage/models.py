@@ -494,3 +494,42 @@ class Message(Base):
     def __repr__(self) -> str:  # pragma: no cover
         return f"Message(id={self.id!r}, role={self.role!r}, conversation_id={self.conversation_id!r})"
 
+
+class MemoryCategory(str, enum.Enum):
+    """Category classification for curated long-term memories."""
+
+    PREFERENCE = "preference"
+    GOAL = "goal"
+    PROJECT_CONTEXT = "project_context"
+    ROUTINE = "routine"
+    PERSONAL_CONTEXT = "personal_context"
+    SYSTEM_PREFERENCE = "system_preference"
+
+
+class Memory(Base):
+    """A curated long-term memory retained for future AI assistant context."""
+
+    __tablename__ = "memories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[MemoryCategory] = mapped_column(
+        SAEnum(MemoryCategory, name="memory_category"), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    source_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"Memory(id={self.id!r}, category={self.category!r}, active={self.is_active!r})"
+
+

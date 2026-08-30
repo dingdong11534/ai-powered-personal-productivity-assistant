@@ -99,9 +99,11 @@ function loadCurrentView() {
     case 'schedule': loadScheduleView(); break;
     case 'reminders': loadRemindersView(); break;
     case 'notifications': loadNotificationsView(); break;
+    case 'memories': loadMemoriesView(); break;
     case 'assistant': loadAssistantView(); break;
     case 'settings': break;
   }
+
   updateNotificationDot();
 }
 
@@ -1019,4 +1021,103 @@ async function handleSendChatMessage(e) {
     selectConversation(state.currentConversationId);
   } catch (err) {}
 }
+
+// Memories Management
+async function loadMemoriesView() {
+  const container = document.getElementById('memories-list-container');
+  if (!container) return;
+  container.innerHTML = '<div class="card"><p style="color:var(--text-muted);">Loading memories...</p></div>';
+
+  const category = document.getElementById('memory-filter-category')?.value || '';
+  const includeArchived = document.getElementById('memory-filter-archived')?.checked || false;
+
+  let url = `/memories?include_archived=${includeArchived}`;
+  if (category) url += `&category=${encodeURIComponent(category)}`;
+
+  try {
+    const mems = await api(url);
+    if (!mems || !mems.length) {
+      container.innerHTML = '<div class="card"><p style="color:var(--text-muted);">No memories found.</p></div>';
+      return;
+    }
+    container.innerHTML = mems.map(m => `
+      <div class="card item-card ${!m.is_active ? 'archived-item' : ''}">
+        <div class="item-content">
+          <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.4rem;">
+            <span class="badge badge-info" style="text-transform:uppercase; font-size:0.75rem;">${escapeHTML(m.category)}</span>
+            ${!m.is_active ? '<span class="badge badge-secondary" style="font-size:0.75rem;">Archived</span>' : ''}
+            <span style="font-size:0.8rem; color:var(--text-muted);">${new Date(m.created_at).toLocaleDateString()}</span>
+          </div>
+          <div style="font-size:0.95rem; line-height:1.4;">${escapeHTML(m.content)}</div>
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-secondary btn-sm" onclick="openEditMemoryModal(${m.id}, '${escapeHTML(m.content).replace(/'/g, "\\'")}', '${m.category}')">Edit</button>
+          ${m.is_active ? `<button class="btn btn-secondary btn-sm" onclick="archiveMemory(${m.id})">Archive</button>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="deleteMemory(${m.id})">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {}
+}
+
+function openCreateMemoryModal() {
+  document.getElementById('memory-modal-title').innerText = 'New Memory Record';
+  document.getElementById('memory-form-id').value = '';
+  document.getElementById('memory-form-content').value = '';
+  document.getElementById('memory-form-category').value = 'preference';
+  openModal('memory-modal');
+}
+
+function openEditMemoryModal(id, content, category) {
+  document.getElementById('memory-modal-title').innerText = 'Edit Memory Record';
+  document.getElementById('memory-form-id').value = id;
+  document.getElementById('memory-form-content').value = content;
+  document.getElementById('memory-form-category').value = category;
+  openModal('memory-modal');
+}
+
+async function handleMemoryFormSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('memory-form-id').value;
+  const content = document.getElementById('memory-form-content').value.trim();
+  const category = document.getElementById('memory-form-category').value;
+
+  if (!content) return;
+
+  try {
+    if (id) {
+      await api(`/memories/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content, category })
+      });
+      showToast('Memory updated successfully', 'success');
+    } else {
+      await api('/memories', {
+        method: 'POST',
+        body: JSON.stringify({ content, category })
+      });
+      showToast('Memory created successfully', 'success');
+    }
+    closeModal('memory-modal');
+    loadMemoriesView();
+  } catch (err) {}
+}
+
+async function archiveMemory(id) {
+  try {
+    await api(`/memories/${id}/archive`, { method: 'POST' });
+    showToast('Memory archived', 'success');
+    loadMemoriesView();
+  } catch (err) {}
+}
+
+async function deleteMemory(id) {
+  if (!confirm('Are you sure you want to permanently delete this memory?')) return;
+  try {
+    await api(`/memories/${id}`, { method: 'DELETE' });
+    showToast('Memory deleted', 'success');
+    loadMemoriesView();
+  } catch (err) {}
+}
+
 

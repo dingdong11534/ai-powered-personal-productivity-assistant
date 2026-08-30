@@ -10,6 +10,8 @@ from app.ai.tools.registry import ToolRegistry
 from app.core.permissions import PermissionScope
 from app.habits.schemas import HabitCreate
 from app.habits.service import HabitService
+from app.memories.schemas import MemoryCreate, MemoryUpdate
+from app.memories.service import MemoryService
 from app.notifications.service import NotificationService
 from app.pomodoro.service import PomodoroSessionService
 from app.projects.schemas import ProjectCreate
@@ -18,8 +20,10 @@ from app.reminders.schemas import ReminderCreate
 from app.reminders.service import ReminderService
 from app.scheduling.schemas import ScheduleItemCreate
 from app.scheduling.service import ScheduleService
+from app.storage.models import MemoryCategory
 from app.tasks.schemas import TaskCreate, TaskUpdate
 from app.tasks.service import TaskService
+
 
 
 def _to_dict(obj: Any) -> dict[str, Any]:
@@ -443,8 +447,126 @@ class MarkNotificationReadTool(BaseTool):
         return _to_dict(notif)
 
 
+# ---------------- MEMORIES ----------------
+class RememberInformationTool(BaseTool):
+    name = "remember_information"
+    description = "Store a curated fact or preference worth remembering for future assistant interactions."
+    scope = PermissionScope.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "content": {"type": "string", "description": "The fact or preference to remember"},
+            "category": {
+                "type": "string",
+                "enum": ["preference", "goal", "project_context", "routine", "personal_context", "system_preference"],
+                "default": "preference",
+                "description": "Category of the memory",
+            },
+        },
+        "required": ["content"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = MemoryService(session)
+        cat_str = args.get("category", "preference")
+        cat = MemoryCategory(cat_str)
+        mem = svc.create_memory(MemoryCreate(content=args["content"], category=cat))
+        return _to_dict(mem)
+
+
+class ListMemoriesTool(BaseTool):
+    name = "list_memories"
+    description = "List stored active memories, optionally filtered by category."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string"},
+            "include_archived": {"type": "boolean", "default": False},
+        },
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = MemoryService(session)
+        mems = svc.list_memories(
+            category=args.get("category"),
+            include_archived=args.get("include_archived", False),
+        )
+        return {"memories": [_to_dict(m) for m in mems]}
+
+
+class SearchMemoriesTool(BaseTool):
+    name = "search_memories"
+    description = "Search active stored memories by keyword query."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search term"},
+            "category": {"type": "string"},
+        },
+        "required": ["query"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = MemoryService(session)
+        mems = svc.retrieve_relevant_memories(
+            query=args["query"],
+            category=args.get("category"),
+            limit=10,
+        )
+        return {"memories": [_to_dict(m) for m in mems]}
+
+
+class UpdateMemoryTool(BaseTool):
+    name = "update_memory"
+    description = "Update an existing memory's content or category."
+    scope = PermissionScope.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "memory_id": {"type": "integer", "description": "ID of memory to update"},
+            "content": {"type": "string"},
+            "category": {"type": "string"},
+        },
+        "required": ["memory_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = MemoryService(session)
+        cat = MemoryCategory(args["category"]) if args.get("category") else None
+        mem = svc.update_memory(
+            args["memory_id"],
+            MemoryUpdate(content=args.get("content"), category=cat),
+        )
+        return _to_dict(mem)
+
+
+class DeleteMemoryTool(BaseTool):
+    name = "delete_memory"
+    description = "Forget, archive, or delete a stored memory."
+    scope = PermissionScope.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "memory_id": {"type": "integer", "description": "ID of memory to remove"},
+            "hard_delete": {"type": "boolean", "default": False, "description": "Whether to permanently delete instead of archiving"},
+        },
+        "required": ["memory_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = MemoryService(session)
+        if args.get("hard_delete"):
+            svc.delete_memory(args["memory_id"])
+            return {"success": True, "message": f"Memory #{args['memory_id']} permanently deleted."}
+        else:
+            mem = svc.archive_memory(args["memory_id"])
+            return _to_dict(mem)
+
+
 def get_default_tool_registry() -> ToolRegistry:
-    """Helper to construct a ToolRegistry populated with all 19 standard tools."""
+    """Helper to construct a ToolRegistry populated with all 24 standard tools."""
     registry = ToolRegistry()
     registry.register(CreateTaskTool())
     registry.register(UpdateTaskTool())
@@ -471,4 +593,11 @@ def get_default_tool_registry() -> ToolRegistry:
 
     registry.register(ListNotificationsTool())
     registry.register(MarkNotificationReadTool())
+
+    registry.register(RememberInformationTool())
+    registry.register(ListMemoriesTool())
+    registry.register(SearchMemoriesTool())
+    registry.register(UpdateMemoryTool())
+    registry.register(DeleteMemoryTool())
     return registry
+

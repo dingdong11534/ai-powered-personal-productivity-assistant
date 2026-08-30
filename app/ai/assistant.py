@@ -96,7 +96,7 @@ class AssistantCore:
             "You help the user manage tasks, projects, habits, schedules, reminders, pomodoro focus sessions, and notifications. "
             "Execute tools whenever requested by the user. Do not invent fake state.\n\n"
         )
-        system_text += self.context_builder.format_context_prompt(self.session)
+        system_text += self.context_builder.format_context_prompt(self.session, query=latest_user_text)
 
         # Include daily plan if relevant
         lower = latest_user_text.lower()

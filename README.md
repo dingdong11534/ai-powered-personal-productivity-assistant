@@ -5,9 +5,10 @@ projects, habits, scheduling, and (eventually) a controlled AI agent with
 voice interaction. See `docs/architecture.md` for the full architecture,
 database schema, and the reasoning behind each design decision.
 
-**Status:** Phase 4 — AI Assistant complete. Working today: Projects, Tasks (with Project links, Tags, Dependencies, search/filter), Habits (with completion history and computed streaks/statistics), Pomodoro sessions, Reminders, a local Schedule, Notifications, Local Web Dashboard, and a text-based AI Assistant with vendor-agnostic LLM abstraction, tool registry, and daily planning capabilities.
+**Status:** Phase 5 — Memory & Advanced Context complete. Working today: Projects, Tasks (with Project links, Tags, Dependencies, search/filter), Habits (with completion history and computed streaks/statistics), Pomodoro sessions, Reminders, a local Schedule, Notifications, Local Web Dashboard, Persistent Conversations, Long-Term Memory (curated preferences, goals, routines), and an AI Assistant with dynamic context retrieval and tool-calling capabilities.
 
 ## Setup
+
 
 ```bash
 python3 -m venv .venv
@@ -112,6 +113,14 @@ yet.
 | DELETE | `/conversations/{id}` | Delete conversation and transcript |
 | GET    | `/conversations/{id}/messages` | List conversation transcript |
 | POST   | `/conversations/{id}/messages` | Send message and trigger AI Assistant |
+| POST   | `/memories` | Create a long-term memory record |
+| GET    | `/memories` | List active memories (`?category=&include_archived=false`) |
+| GET    | `/memories/search` | Search memories by keyword (`?query=`) |
+| GET    | `/memories/{id}` | Get a single memory record |
+| PUT    | `/memories/{id}` | Update memory content or category |
+| POST   | `/memories/{id}/archive` | Archive a memory record |
+| DELETE | `/memories/{id}` | Permanently delete a memory record |
+
 
 
 `GET /tasks` query parameters (all optional, combined with AND):

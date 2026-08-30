@@ -93,6 +93,46 @@ class MockAIProvider(AIProvider):
                 ],
             )
 
+        if "remember that" in user_text or "please remember" in user_text or "remember:" in user_text:
+            content_val = last_msg.get("content", "")
+            if "remember that" in content_val.lower():
+                content_val = content_val.lower().split("remember that", 1)[1].strip(" .")
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_mem_1",
+                        name="remember_information",
+                        arguments={"content": content_val or "I prefer focused work in the evening", "category": "preference"},
+                    )
+                ],
+            )
+
+        if "what do you remember" in user_text or "list memories" in user_text or "all memories" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_mem_list",
+                        name="list_memories",
+                        arguments={},
+                    )
+                ],
+            )
+
+        if "forget" in user_text or "delete memory" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_mem_del",
+                        name="delete_memory",
+                        arguments={"memory_id": 1},
+                    )
+                ],
+            )
+
+
         if "start pomodoro" in user_text or "focus" in user_text:
             return AIResponse(
                 content=None,
@@ -109,6 +149,7 @@ class MockAIProvider(AIProvider):
         return AIResponse(
             content=f"Hello! I am your AI assistant. I received: '{last_msg.get('content', '')}'."
         )
+
 
 
 class OpenAICompatibleProvider(AIProvider):

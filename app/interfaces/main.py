@@ -67,6 +67,7 @@ from app.core.config import get_settings
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
 from app.interfaces.api.conversations import router as conversations_router
 from app.interfaces.api.habits import router as habits_router
+from app.interfaces.api.memories import router as memories_router
 from app.interfaces.api.notifications import router as notifications_router
 from app.interfaces.api.pomodoro import router as pomodoro_router
 from app.interfaces.api.projects import router as projects_router
@@ -74,6 +75,7 @@ from app.interfaces.api.reminders import router as reminders_router
 from app.interfaces.api.schedule import router as schedule_router
 from app.interfaces.api.tags import router as tags_router
 from app.interfaces.api.tasks import router as tasks_router
+from app.memories.exceptions import DuplicateMemoryError, MemoryNotFoundError
 from app.notifications.exceptions import NotificationNotFoundError
 from app.pomodoro.exceptions import PomodoroSessionNotFoundError, SessionAlreadyEndedError
 from app.projects.exceptions import ArchivedProjectError, ProjectNotFoundError
@@ -120,6 +122,7 @@ NOT_FOUND_EXCEPTIONS = (
     NotificationNotFoundError,
     ConversationNotFoundError,
     MessageNotFoundError,
+    MemoryNotFoundError,
 )
 BAD_REQUEST_EXCEPTIONS = (SelfDependencyError, InvalidTimeRangeError)
 CONFLICT_EXCEPTIONS = (
@@ -131,6 +134,7 @@ CONFLICT_EXCEPTIONS = (
     ArchivedHabitError,
     DuplicateCompletionError,
     SessionAlreadyEndedError,
+    DuplicateMemoryError,
 )
 
 for exc_type in NOT_FOUND_EXCEPTIONS:
@@ -150,6 +154,8 @@ app.include_router(reminders_router)
 app.include_router(schedule_router)
 app.include_router(notifications_router)
 app.include_router(conversations_router)
+app.include_router(memories_router)
+
 
 # Phase 3: Static Files and Web UI Dashboard
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

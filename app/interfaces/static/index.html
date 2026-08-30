@@ -66,7 +66,14 @@
         </button>
       </li>
       <li class="nav-item">
+        <button data-target="memories">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>
+          Memories
+        </button>
+      </li>
+      <li class="nav-item">
         <button data-target="assistant">
+
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7z"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg>
           AI Assistant
         </button>
@@ -303,7 +310,38 @@
         </div>
       </section>
 
-      <!-- 9. AI Assistant View -->
+      <!-- 9. Memories View -->
+      <section id="section-memories" class="view-section">
+        <div class="page-header">
+          <h2>Long-Term Memories & Preferences</h2>
+          <button class="btn btn-primary" onclick="openCreateMemoryModal()">+ Remember Fact</button>
+        </div>
+        <div class="filter-bar">
+          <div class="filter-group">
+            <label>Category:</label>
+            <select id="memory-filter-category" onchange="loadMemoriesView()">
+              <option value="">All Categories</option>
+              <option value="preference">Preference</option>
+              <option value="goal">Goal</option>
+              <option value="project_context">Project Context</option>
+              <option value="routine">Routine</option>
+              <option value="personal_context">Personal Context</option>
+              <option value="system_preference">System Preference</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label style="font-size:0.9rem; color:var(--text-secondary);">
+              <input type="checkbox" id="memory-filter-archived" onchange="loadMemoriesView()"> Include Archived
+            </label>
+          </div>
+        </div>
+        <div class="item-list" id="memories-list-container">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- 10. AI Assistant View -->
+
       <section id="section-assistant" class="view-section">
         <div class="page-header">
           <h2>AI Assistant Chat</h2>
@@ -570,7 +608,40 @@
     </div>
   </div>
 
+  <!-- Memory Modal -->
+  <div class="modal-overlay" id="memory-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="memory-modal-title">New Memory Record</h3>
+        <button class="btn-icon" onclick="closeModal('memory-modal')">&times;</button>
+      </div>
+      <form id="memory-form" onsubmit="handleMemoryFormSubmit(event)">
+        <input type="hidden" id="memory-form-id">
+        <div class="form-group">
+          <label>Memory Content *</label>
+          <textarea id="memory-form-content" rows="3" required placeholder="e.g. User prefers doing focused work late in the evening."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Category *</label>
+          <select id="memory-form-category">
+            <option value="preference">Preference</option>
+            <option value="goal">Goal</option>
+            <option value="project_context">Project Context</option>
+            <option value="routine">Routine</option>
+            <option value="personal_context">Personal Context</option>
+            <option value="system_preference">System Preference</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('memory-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Memory</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Tag Manager Modal -->
+
   <div class="modal-overlay" id="tag-manager-modal">
     <div class="modal">
       <div class="modal-header">

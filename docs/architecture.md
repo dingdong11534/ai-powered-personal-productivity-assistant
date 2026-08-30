@@ -688,7 +688,36 @@ Phase 4 introduces a text-based AI assistant core that operates over the product
 ### 9.2 Schema Safety & Database Migration Policy
 
 - **Current Schema Safety**: Phase 4 added two new tables (`conversations` and `messages`), both fully additive with default table creation via `Base.metadata.create_all()`. Existing user data in Phase 0-3 tables remained completely untouched.
-- **Phase 5 Schema Readiness**: Phase 5 will add the `memories` table for long-term AI memory persistence. This change is also purely additive.
+- **Phase 5 Schema Readiness**: Phase 5 added the `memories` table for long-term AI memory persistence. This change is also purely additive.
 - **Alembic Trigger Condition**: Alembic migrations remain deferred until the first non-additive schema change (e.g. column renames, altering existing column types, dropping columns, or adding `NOT NULL` constraints to existing populated tables). Alembic is already specified in `requirements.txt` ready for activation when required.
+
+## 10. Phase 5 Architecture — Memory & Advanced Context
+
+Phase 5 equips the AI assistant with persistent, curated long-term memory that exists independently of raw conversation history.
+
+### 10.1 Key Architecture & Design Principles
+
+1. **Separation of History and Memory**:
+   - `messages` (chat transcript) records raw user/assistant interactions.
+   - `memories` (long-term memory) records extracted, curated facts, routines, goals, and user preferences (`MemoryCategory` enum).
+   - This prevents temporary chat noise from polluting system context.
+
+2. **Memory Domain Architecture (`app.memories`)**:
+   - `Memory` ORM class in `app/storage/models.py`.
+   - `MemoryRepository` handles DB operations (CRUD, active/archived list, keyword search, duplicate matching).
+   - `MemoryService` enforces business rules (duplicate prevention per category, soft archive / hard delete, substring relevance matching).
+
+3. **AI Tools Integration (`app.ai.tools`)**:
+   - 5 dedicated tools registered in `ToolRegistry` (`remember_information`, `list_memories`, `search_memories`, `update_memory`, `delete_memory`).
+   - Protected by `PermissionChecker` (Read scope for retrieval, Write scope for creation/modification).
+
+4. **Dynamic Prompt Injection (`ContextBuilder` & `DailyPlanner`)**:
+   - `ContextBuilder.format_context_prompt()` performs real-time keyword search against `MemoryService` using the latest user input, injecting top matching memories into system prompt context.
+   - `DailyPlanner.generate_plan()` pulls active user preferences and routines to shape deterministic daily task/habit recommendations.
+
+5. **REST API & Web UI Integration**:
+   - FastAPI `/memories` router (`app/interfaces/api/memories.py`) with standard status mapping (`404` for missing, `409` for duplicate).
+   - Interactive Memories panel in the web UI (`app/interfaces/static/`) for viewing, creating, category filtering, archiving, and editing long-term facts.
+
 
 
