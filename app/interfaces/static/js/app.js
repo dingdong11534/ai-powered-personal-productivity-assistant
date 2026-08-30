@@ -859,7 +859,7 @@ async function openTaskDepsModal(taskId) {
   tagsList.innerHTML = tags.map(t => `<span class="tag-pill">${escapeHTML(t.name)} <button style="background:none; border:none; color:inherit; cursor:pointer;" onclick="detachTag(${taskId}, ${t.id})">&times;</button></span>`).join('') || '<p style="color:var(--text-muted);">No tags attached.</p>';
 
   const depsList = document.getElementById('deps-list');
-  depsList.innerHTML = deps.map(d => `<div class="item-card"><div class="item-title">Depends on Task #${d.depends_on_task_id}</div><button class="btn btn-danger btn-sm" onclick="removeDependency(${taskId}, ${d.depends_on_task_id})">Remove</button></div>`).join('') || '<p style="color:var(--text-muted);">No direct dependencies.</p>';
+  depsList.innerHTML = deps.map(depId => `<div class="item-card"><div class="item-title">Depends on Task #${depId}</div><button class="btn btn-danger btn-sm" onclick="removeDependency(${taskId}, ${depId})">Remove</button></div>`).join('') || '<p style="color:var(--text-muted);">No direct dependencies.</p>';
 
   openModal('task-deps-modal');
 }

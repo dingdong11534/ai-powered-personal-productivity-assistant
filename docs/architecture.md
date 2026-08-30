@@ -658,24 +658,37 @@ trigger condition (the first non-additive schema change).
 
 Phase 4 introduces a text-based AI assistant core that operates over the productivity application's domain services using structured, validated tool execution.
 
-### 9.1 Key Components
+### 9.1 Key Components & Architecture Seam
 
-1. **AI Provider Abstraction (`app.ai.provider`)**:
-   - `AIProvider` base class with `MockAIProvider` (offline-first, deterministic keyword triggers) and `OpenAICompatibleProvider` (for OpenAI, Groq, Ollama, etc.).
-   - Configurable via `AI_PROVIDER`, `AI_MODEL`, and `AI_BASE_URL`.
+1. **Single AssistantCore Seam (`app.core.assistant` & `app.ai.assistant`)**:
+   - `app.ai.assistant.AssistantCore` is the single canonical orchestrator for AI tool loops and message handling.
+   - `app.core.assistant.AssistantCore` re-exports `app.ai.assistant.AssistantCore` to maintain a single core seam for all present and future interfaces (Web API, Voice, CLI) without duplicating logic.
 
-2. **Persistent Conversation System (`app.conversations`)**:
+2. **AI Provider Abstraction (`app.ai.provider`)**:
+   - `AIProvider` base class with `MockAIProvider` (offline-first, deterministic keyword triggers) and `OpenAICompatibleProvider` (for OpenAI, Groq, Ollama, vLLM, etc.).
+   - Factory `get_ai_provider()` instantiates the configured provider based on `AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL`, and `AI_API_KEY`.
+   - Comprehensive error handling wraps provider connection failures cleanly in user-visible responses without crashing the server.
+
+3. **Persistent Conversation System (`app.conversations`)**:
    - Stores conversations (`conversations`) and transcripts (`messages`) in SQLite.
    - Preserves message histories across application reboots.
 
-3. **Tool Registry & Validation (`app.ai.tools`)**:
-   - 19 standard domain tools covering Tasks, Projects, Habits, Pomodoro, Reminders, Schedule, and Notifications.
+4. **Tool Registry & Validation (`app.ai.tools`)**:
+   - Standard domain tools covering Tasks, Projects, Habits, Pomodoro, Reminders, Schedule, and Notifications.
    - Enforces scope checking via `PermissionChecker` before executing domain services.
+   - Tool arguments are parsed and validated via structured Pydantic schemas; arbitrary code execution is strictly prohibited.
 
-4. **Assistant Core Engine (`app.ai.assistant`)**:
+5. **Assistant Core Engine (`app.ai.assistant`)**:
    - Orchestrates conversation history, injects system context (`ContextBuilder`) and deterministic daily plan suggestions (`DailyPlanner`).
-   - Executes multi-turn tool loops with a max iteration limit of 5 to prevent runaway execution.
+   - Executes multi-turn tool loops with a max iteration limit of 5 to prevent runaway loops.
 
-5. **Web Chat Interface (`app.interfaces.static`)**:
-   - Adds a dedicated AI Assistant tab to the local web dashboard for real-time chat, conversation management, and tool call visibility.
+6. **Web Chat Interface (`app.interfaces.static`)**:
+   - Dedicated AI Assistant view in the local web dashboard for real-time chat, conversation management, and tool call visibility.
+
+### 9.2 Schema Safety & Database Migration Policy
+
+- **Current Schema Safety**: Phase 4 added two new tables (`conversations` and `messages`), both fully additive with default table creation via `Base.metadata.create_all()`. Existing user data in Phase 0-3 tables remained completely untouched.
+- **Phase 5 Schema Readiness**: Phase 5 will add the `memories` table for long-term AI memory persistence. This change is also purely additive.
+- **Alembic Trigger Condition**: Alembic migrations remain deferred until the first non-additive schema change (e.g. column renames, altering existing column types, dropping columns, or adding `NOT NULL` constraints to existing populated tables). Alembic is already specified in `requirements.txt` ready for activation when required.
+
 

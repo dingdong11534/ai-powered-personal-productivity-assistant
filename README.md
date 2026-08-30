@@ -16,10 +16,19 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+### Environment Configuration
+
+The application is configured via environment variables or a `.env` file in the project root:
+
+- `AI_PROVIDER`: Choose `mock` for local offline testing or `openai` for OpenAI / OpenAI-compatible APIs (Ollama, Groq, vLLM). Default: `mock`.
+- `AI_MODEL`: Model name passed to the provider (e.g. `gpt-4o-mini`, `llama3`). Default: `gpt-4o-mini`.
+- `AI_BASE_URL`: Base URL for OpenAI-compatible HTTP endpoint. Default: `https://api.openai.com/v1`.
+- `AI_API_KEY`: API key for the AI provider.
+
 ## Running the tests
 
 ```bash
-pytest -v
+.venv/bin/pytest -v
 ```
 
 `tests/test_events.py`, `tests/test_permissions.py`, and
@@ -30,13 +39,14 @@ this project's own code. Everything else requires the full
 ## Running the API
 
 ```bash
-uvicorn app.interfaces.main:app --reload
+.venv/bin/uvicorn app.interfaces.main:app --reload
 ```
 
-Then visit `http://127.0.0.1:8000/docs` for interactive API docs
+Then visit `http://127.0.0.1:8000/` for the web dashboard, `http://127.0.0.1:8000/docs` for interactive API docs
 (Swagger UI, generated automatically by FastAPI from the route type
 hints and Pydantic schemas), or `http://127.0.0.1:8000/health` for a
 liveness check.
+
 
 On startup, the app creates any missing tables in `data/assistant.db`
 (SQLite). If you have a database from before Phase 1, it also safely
@@ -96,6 +106,13 @@ yet.
 | GET    | `/notifications/{id}` | Get one notification |
 | POST   | `/notifications/{id}/read` | Mark read (idempotent) |
 | POST   | `/notifications/{id}/unread` | Mark unread (idempotent) |
+| POST   | `/conversations` | Create a new chat session |
+| GET    | `/conversations` | List chat sessions |
+| GET    | `/conversations/{id}` | Get conversation details |
+| DELETE | `/conversations/{id}` | Delete conversation and transcript |
+| GET    | `/conversations/{id}/messages` | List conversation transcript |
+| POST   | `/conversations/{id}/messages` | Send message and trigger AI Assistant |
+
 
 `GET /tasks` query parameters (all optional, combined with AND):
 `status`, `priority` (1-4), `project_id`, `tag_id`, `deadline_before`,
