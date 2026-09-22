@@ -132,7 +132,53 @@ class MockAIProvider(AIProvider):
                 ],
             )
 
+        if "write file" in user_text or "create file" in user_text or "save file" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_file_write",
+                        name="create_workspace_file",
+                        arguments={"path": "notes.txt", "content": "Assistant workspace note content"},
+                    )
+                ],
+            )
 
+        if "list workspace files" in user_text or "list files" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_file_list",
+                        name="list_workspace_files",
+                        arguments={"sub_path": ""},
+                    )
+                ],
+            )
+
+        if "read file" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_file_read",
+                        name="read_workspace_file",
+                        arguments={"path": "notes.txt"},
+                    )
+                ],
+            )
+
+        if "delete file" in user_text:
+            return AIResponse(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call_mock_file_del",
+                        name="delete_workspace_file",
+                        arguments={"path": "notes.txt"},
+                    )
+                ],
+            )
         if "start pomodoro" in user_text or "focus" in user_text:
             return AIResponse(
                 content=None,

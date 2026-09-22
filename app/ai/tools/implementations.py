@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.ai.tools.base import BaseTool
 from app.ai.tools.registry import ToolRegistry
 from app.core.permissions import PermissionScope
+from app.files.service import FileService
 from app.habits.schemas import HabitCreate
+
 from app.habits.service import HabitService
 from app.memories.schemas import MemoryCreate, MemoryUpdate
 from app.memories.service import MemoryService
@@ -565,8 +567,153 @@ class DeleteMemoryTool(BaseTool):
             return _to_dict(mem)
 
 
+# ---------------- FILES / WORKSPACE ----------------
+class ListWorkspaceFilesTool(BaseTool):
+    name = "list_workspace_files"
+    description = "List files and subdirectories within the sandboxed assistant workspace."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "sub_path": {
+                "type": "string",
+                "default": "",
+                "description": "Optional subdirectory within the workspace to list.",
+            },
+        },
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        files = svc.list_files(sub_path=args.get("sub_path", ""))
+        return {"files": [_to_dict(f) for f in files]}
+
+
+class ReadWorkspaceFileTool(BaseTool):
+    name = "read_workspace_file"
+    description = "Read the text content of a file located in the sandboxed workspace."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative file path within the workspace.",
+            },
+        },
+        "required": ["path"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        result = svc.read_file(relative_path=args["path"])
+        return _to_dict(result)
+
+
+class CreateWorkspaceFileTool(BaseTool):
+    name = "create_workspace_file"
+    description = "Create a new UTF-8 text file in the sandboxed workspace. Fails if it already exists."
+    scope = PermissionScope.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative file path within the workspace.",
+            },
+            "content": {
+                "type": "string",
+                "description": "Text content to write into the file.",
+            },
+        },
+        "required": ["path", "content"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        result = svc.write_file(
+            relative_path=args["path"],
+            content=args["content"],
+            overwrite=False,
+        )
+        return _to_dict(result)
+
+
+class UpdateWorkspaceFileTool(BaseTool):
+    name = "update_workspace_file"
+    description = "Replace an existing UTF-8 text file in the sandboxed workspace. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Existing relative file path within the workspace."},
+            "content": {"type": "string", "description": "Replacement text content."},
+        },
+        "required": ["path", "content"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        target = svc.resolve_and_validate_path(args["path"])
+        if not target.exists():
+            from app.files.exceptions import FileNotFoundInWorkspaceError
+
+            raise FileNotFoundInWorkspaceError(f"File '{args['path']}' not found in workspace.")
+        return _to_dict(svc.write_file(args["path"], args["content"], overwrite=True))
+
+
+class SearchWorkspaceFilesTool(BaseTool):
+    name = "search_workspace_files"
+    description = "Search for files in the workspace matching a query in filename or text content."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search term to match against file paths and content.",
+            },
+            "sub_path": {
+                "type": "string",
+                "default": "",
+                "description": "Subdirectory to restrict search.",
+            },
+        },
+        "required": ["query"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        files = svc.search_files(
+            query=args["query"],
+            sub_path=args.get("sub_path", ""),
+        )
+        return {"files": [_to_dict(f) for f in files]}
+
+
+class DeleteWorkspaceFileTool(BaseTool):
+    name = "delete_workspace_file"
+    description = "Delete a file or directory inside the sandboxed workspace."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative file or folder path within the workspace to delete.",
+            },
+        },
+        "required": ["path"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = FileService()
+        svc.delete_file(relative_path=args["path"])
+        return {"success": True, "message": f"Path '{args['path']}' deleted successfully."}
+
+
 def get_default_tool_registry() -> ToolRegistry:
-    """Helper to construct a ToolRegistry populated with all 24 standard tools."""
+    """Helper to construct a ToolRegistry populated with all 30 standard tools."""
     registry = ToolRegistry()
     registry.register(CreateTaskTool())
     registry.register(UpdateTaskTool())
@@ -599,5 +746,11 @@ def get_default_tool_registry() -> ToolRegistry:
     registry.register(SearchMemoriesTool())
     registry.register(UpdateMemoryTool())
     registry.register(DeleteMemoryTool())
-    return registry
 
+    registry.register(ListWorkspaceFilesTool())
+    registry.register(ReadWorkspaceFileTool())
+    registry.register(CreateWorkspaceFileTool())
+    registry.register(UpdateWorkspaceFileTool())
+    registry.register(SearchWorkspaceFilesTool())
+    registry.register(DeleteWorkspaceFileTool())
+    return registry

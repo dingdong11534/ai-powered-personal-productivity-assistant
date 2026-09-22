@@ -22,6 +22,7 @@ class AssistantCore:
         session: Session,
         provider: AIProvider | None = None,
         tool_registry: ToolRegistry | None = None,
+        destructive_authorized: bool = False,
     ):
         self.session = session
         self.provider = provider or get_ai_provider()
@@ -29,6 +30,7 @@ class AssistantCore:
         self.conv_svc = ConversationService(session)
         self.context_builder = ContextBuilder()
         self.planner = DailyPlanner()
+        self.destructive_authorized = destructive_authorized
 
     def handle_user_message(self, conversation_id: int, user_content: str) -> MessageRead:
         # 1. Save user message to database
@@ -71,7 +73,12 @@ class AssistantCore:
 
             # Execute each requested tool safely
             for tc in response.tool_calls:
-                exec_result = self.tool_registry.execute_tool(tc.name, tc.arguments, self.session)
+                exec_result = self.tool_registry.execute_tool(
+                    tc.name,
+                    tc.arguments,
+                    self.session,
+                    destructive_authorized=self.destructive_authorized,
+                )
                 self.conv_svc.add_message(
                     conversation_id,
                     MessageCreate(

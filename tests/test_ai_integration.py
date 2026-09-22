@@ -1,12 +1,6 @@
 """End-to-end integration test for AI Assistant and tool-calling system."""
 
-from fastapi.testclient import TestClient
-from app.interfaces.main import app
-
-client = TestClient(app)
-
-
-def test_e2e_ai_chat_and_tool_execution(db_session):
+def test_e2e_ai_chat_and_tool_execution(client):
     # 1. Create a conversation
     resp = client.post("/conversations", json={"title": "E2E Integration Test Chat"})
     assert resp.status_code == 201

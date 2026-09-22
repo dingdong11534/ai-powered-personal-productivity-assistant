@@ -40,6 +40,8 @@ class ToolRegistry:
         name: str,
         args: dict[str, Any],
         session: Session,
+        *,
+        destructive_authorized: bool = False,
     ) -> dict[str, Any]:
         """Validate permissions and execute the tool safely.
 
@@ -55,6 +57,9 @@ class ToolRegistry:
                 scope=tool.scope,
                 actor="ai",
                 description=f"Tool call '{tool.name}' with args {args}",
+                # This value comes from the trusted interface request, never
+                # from model-generated tool arguments.
+                authorized=destructive_authorized,
             )
             self.permission_checker.check(req)
         except PermissionDenied as p_err:

@@ -97,6 +97,17 @@ class ScheduleService:
         docstring for why this is a query, not an enforced block."""
         return self.repository.find_overlapping(starts_at, ends_at, exclude_id=exclude_id)
 
+    def find_all_conflicts(self) -> list[ScheduleItem]:
+        """Find all schedule items that overlap with at least one other item."""
+        items = self.repository.list(limit=500)
+        conflicting_ids: set[int] = set()
+        for i, a in enumerate(items):
+            for b in items[i + 1:]:
+                if a.starts_at < b.ends_at and a.ends_at > b.starts_at:
+                    conflicting_ids.add(a.id)
+                    conflicting_ids.add(b.id)
+        return [item for item in items if item.id in conflicting_ids]
+
     def _validate_range(self, starts_at: datetime, ends_at: datetime) -> None:
         if ends_at <= starts_at:
             raise InvalidTimeRangeError()

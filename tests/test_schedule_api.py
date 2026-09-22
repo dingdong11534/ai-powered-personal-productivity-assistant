@@ -121,3 +121,31 @@ def test_conflicts_endpoint_empty_when_no_overlap(client):
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_conflicts_endpoint_parameterless_returns_all_conflicts(client):
+    """Verifies that calling /schedule/conflicts with no parameters returns 200 and all overlapping items."""
+    first = client.post(
+        "/schedule",
+        json={
+            "title": "Task 1",
+            "starts_at": "2026-08-16T10:00:00",
+            "ends_at": "2026-08-16T11:00:00",
+        },
+    ).json()
+
+    second = client.post(
+        "/schedule",
+        json={
+            "title": "Task 2",
+            "starts_at": "2026-08-16T10:30:00",
+            "ends_at": "2026-08-16T11:30:00",
+        },
+    ).json()
+
+    # Parameterless call
+    response = client.get("/schedule/conflicts")
+    assert response.status_code == 200
+    conflict_ids = {item["id"] for item in response.json()}
+    assert first["id"] in conflict_ids
+    assert second["id"] in conflict_ids

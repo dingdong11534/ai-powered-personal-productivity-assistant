@@ -1,12 +1,6 @@
 """API endpoint tests for /memories router."""
 
-from fastapi.testclient import TestClient
-from app.interfaces.main import app
-
-client = TestClient(app)
-
-
-def test_memories_api_crud(db_session):
+def test_memories_api_crud(client):
     # 1. Create Memory (POST /memories)
     res = client.post(
         "/memories",

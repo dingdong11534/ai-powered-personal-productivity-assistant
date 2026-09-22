@@ -1,12 +1,6 @@
 """Tests for Conversations and Chat API endpoints."""
 
-from fastapi.testclient import TestClient
-from app.interfaces.main import app
-
-client = TestClient(app)
-
-
-def test_conversations_api_flow():
+def test_conversations_api_flow(client):
     # 1. Create conversation
     res_create = client.post("/conversations", json={"title": "API Chat"})
     assert res_create.status_code == 201

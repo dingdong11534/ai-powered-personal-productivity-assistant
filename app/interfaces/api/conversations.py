@@ -1,6 +1,6 @@
 """FastAPI router for Conversations and AI Assistant chat interactions."""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.ai.assistant import AssistantCore
@@ -39,13 +39,14 @@ def get_conversation(
     return ConversationService(session).get_conversation(conversation_id)
 
 
-@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_conversation(
     conversation_id: int,
     session: Session = Depends(get_db),
-) -> None:
+) -> Response:
     """Delete a conversation and its messages."""
     ConversationService(session).delete_conversation(conversation_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageRead])
@@ -64,6 +65,6 @@ def send_message(
     session: Session = Depends(get_db),
 ) -> MessageRead:
     """Send a user message to the conversation and trigger the AI Assistant."""
-    assistant = AssistantCore(session)
+    assistant = AssistantCore(session, destructive_authorized=data.authorize_destructive)
     user_text = data.content or ""
     return assistant.handle_user_message(conversation_id, user_text)

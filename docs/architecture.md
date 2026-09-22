@@ -695,6 +695,12 @@ Phase 4 introduces a text-based AI assistant core that operates over the product
 
 Phase 5 equips the AI assistant with persistent, curated long-term memory that exists independently of raw conversation history.
 
+## 11. Phase 6 — Controlled File Workspace
+
+`app.files.FileService` is the only filesystem access path for both `/files` and AI tools. Its centrally configured root is `data/workspace/`; it rejects absolute paths, Windows drive paths, traversal, excessive nesting, and symlink escapes. Returned paths are always workspace-relative. The service accepts only bounded UTF-8 text reads/writes, limits recursive scans and results, and emits content-free `files.created`, `files.overwritten`, and `files.deleted` events through `app.core.events.file_events`.
+
+The AI path is `AssistantCore → ToolRegistry → PermissionChecker → FileService`. Listing, search, and reads are `READ`; creating a new file is `WRITE`; updating an existing file and deletion are `DESTRUCTIVE`. A destructive tool call is rejected unless the trusted conversation API request includes `authorize_destructive: true`; model-generated tool arguments cannot set that authorization. Direct destructive `/files` operations require the corresponding explicit confirmation field/query parameter.
+
 ### 10.1 Key Architecture & Design Principles
 
 1. **Separation of History and Memory**:
@@ -718,6 +724,5 @@ Phase 5 equips the AI assistant with persistent, curated long-term memory that e
 5. **REST API & Web UI Integration**:
    - FastAPI `/memories` router (`app/interfaces/api/memories.py`) with standard status mapping (`404` for missing, `409` for duplicate).
    - Interactive Memories panel in the web UI (`app/interfaces/static/`) for viewing, creating, category filtering, archiving, and editing long-term facts.
-
 
 

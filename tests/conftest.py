@@ -34,6 +34,8 @@ rows from a previous test.
 from __future__ import annotations
 
 import pytest
+from contextlib import asynccontextmanager
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -83,7 +85,9 @@ def client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(bind=engine)
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)

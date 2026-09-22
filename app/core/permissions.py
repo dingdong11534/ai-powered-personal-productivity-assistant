@@ -77,6 +77,7 @@ class PermissionRequest:
     scope: PermissionScope
     actor: str
     description: str
+    authorized: bool = False
 
 
 class PermissionDenied(Exception):
@@ -96,8 +97,13 @@ class PermissionChecker:
 
     def check(self, request: PermissionRequest) -> None:
         """Raise PermissionDenied if `request` is not allowed; else return None."""
-        if request.scope in (PermissionScope.DESTRUCTIVE, PermissionScope.EXTERNAL):
+        if request.scope is PermissionScope.EXTERNAL:
             raise PermissionDenied(
                 f"{request.actor} requested {request.scope.value} action "
                 f"({request.description!r}) — not yet supported."
+            )
+        if request.scope is PermissionScope.DESTRUCTIVE and not request.authorized:
+            raise PermissionDenied(
+                f"{request.actor} requested destructive action "
+                f"({request.description!r}) — explicit user authorization is required."
             )

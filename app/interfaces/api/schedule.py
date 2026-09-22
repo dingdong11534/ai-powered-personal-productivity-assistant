@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.scheduling.schemas import ScheduleItemCreate, ScheduleItemRead, ScheduleItemUpdate
@@ -48,12 +48,18 @@ def list_schedule_items(
 # Static route registered before the dynamic "/{item_id}" below — see module docstring.
 @router.get("/conflicts", response_model=list[ScheduleItemRead])
 def get_conflicts(
-    starts_at: datetime,
-    ends_at: datetime,
+    starts_at: datetime | None = Query(default=None),
+    ends_at: datetime | None = Query(default=None),
     exclude_id: int | None = Query(default=None),
     service: ScheduleService = Depends(get_schedule_service),
 ) -> list[ScheduleItemRead]:
-    return service.find_conflicts(starts_at, ends_at, exclude_id=exclude_id)
+    if starts_at is not None and ends_at is not None:
+        return service.find_conflicts(starts_at, ends_at, exclude_id=exclude_id)
+    if starts_at is None and ends_at is None:
+        return service.find_all_conflicts()
+    from app.scheduling.exceptions import InvalidTimeRangeError
+
+    raise InvalidTimeRangeError()
 
 
 @router.get("/{item_id}", response_model=ScheduleItemRead)
@@ -72,8 +78,9 @@ def update_schedule_item(
     return service.update_schedule_item(item_id, data)
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_schedule_item(
     item_id: int, service: ScheduleService = Depends(get_schedule_service)
-) -> None:
+) -> Response:
     service.delete_schedule_item(item_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

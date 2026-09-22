@@ -86,9 +86,17 @@ class Settings(BaseSettings):
     # --- Storage ---
     data_dir: Path = Field(
         default=PROJECT_ROOT / "data",
-        description="Root directory for the SQLite DB and (later) the "
-        "assistant's sandboxed file workspace.",
+        description="Root directory for the SQLite DB and file workspace.",
     )
+    workspace_dir: Path = Field(
+        default=PROJECT_ROOT / "data" / "workspace",
+        description="Sandboxed directory for assistant workspace file access.",
+    )
+    max_file_read_bytes: int = Field(default=1_000_000, ge=1)
+    max_file_write_bytes: int = Field(default=1_000_000, ge=1)
+    max_file_results: int = Field(default=100, ge=1)
+    max_file_scan_entries: int = Field(default=1_000, ge=1)
+    max_workspace_depth: int = Field(default=10, ge=1)
     database_url: str = Field(
         default=f"sqlite:///{PROJECT_ROOT / 'data' / 'assistant.db'}",
         description="SQLAlchemy connection string. Defaults to an "
@@ -122,6 +130,12 @@ class Settings(BaseSettings):
         """
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return self.data_dir
+
+    def ensure_workspace_dir(self) -> Path:
+        """Create the sandboxed workspace directory if it doesn't exist yet, return it."""
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+        return self.workspace_dir
+
 
 
 @lru_cache

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.storage.database import get_db
@@ -99,9 +99,10 @@ def update_task(
     return service.update_task(task_id, data)
 
 
-@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, service: TaskService = Depends(get_task_service)) -> None:
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_task(task_id: int, service: TaskService = Depends(get_task_service)) -> Response:
     service.delete_task(task_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- Tags on a task ---
@@ -152,10 +153,12 @@ def add_task_dependency(
 @router.delete(
     "/{task_id}/dependencies/{depends_on_task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
 )
 def remove_task_dependency(
     task_id: int,
     depends_on_task_id: int,
     service: TaskDependencyService = Depends(get_dependency_service),
-) -> None:
+) -> Response:
     service.remove_dependency(task_id, depends_on_task_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

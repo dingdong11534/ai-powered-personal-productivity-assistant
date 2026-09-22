@@ -10,7 +10,7 @@ distinct, explicit query behaviors.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.reminders.schemas import ReminderCreate, ReminderRead, ReminderUpdate
@@ -69,8 +69,9 @@ def fire_reminder(
     return service.mark_fired(reminder_id)
 
 
-@router.delete("/{reminder_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{reminder_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_reminder(
     reminder_id: int, service: ReminderService = Depends(get_reminder_service)
-) -> None:
+) -> Response:
     service.delete_reminder(reminder_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -5,7 +5,7 @@ projects, habits, scheduling, and (eventually) a controlled AI agent with
 voice interaction. See `docs/architecture.md` for the full architecture,
 database schema, and the reasoning behind each design decision.
 
-**Status:** Phase 5 — Memory & Advanced Context complete. Working today: Projects, Tasks (with Project links, Tags, Dependencies, search/filter), Habits (with completion history and computed streaks/statistics), Pomodoro sessions, Reminders, a local Schedule, Notifications, Local Web Dashboard, Persistent Conversations, Long-Term Memory (curated preferences, goals, routines), and an AI Assistant with dynamic context retrieval and tool-calling capabilities.
+**Status:** Phase 6 — Controlled File Workspace complete. In addition to the Phase 5 features, the assistant can work only within `data/workspace/`: list, search, read, create, update, and delete UTF-8 text files through the same sandboxed service used by the API and AI tools. Updates and deletes require explicit user authorization.
 
 ## Setup
 
@@ -120,6 +120,10 @@ yet.
 | PUT    | `/memories/{id}` | Update memory content or category |
 | POST   | `/memories/{id}/archive` | Archive a memory record |
 | DELETE | `/memories/{id}` | Permanently delete a memory record |
+| GET | `/files` | List workspace files (`?sub_path=&search=`) |
+| GET | `/files/read` | Read a UTF-8 workspace file (`?path=`) |
+| POST | `/files/write` | Create or write a workspace file; overwrites require `confirm_destructive: true` |
+| DELETE | `/files` | Delete a workspace path; requires `?confirm_destructive=true` |
 
 
 
@@ -168,7 +172,7 @@ app/
   planning/       daily planning & prioritization        (Phase 5)
   ai/             LLM abstraction & tool-calling         (Phase 4)
   storage/        SQLAlchemy engine/session + models     (Phase 0.2 + 1 + 2)
-  files/          sandboxed assistant file tools         (Phase 6)
+  files/          sandboxed workspace service + schemas + safety limits (Phase 6)
   integrations/   external API adapters + future OS-level notification dispatch (Phase 7)
   voice/          speech-to-text / text-to-speech         (Phase 8)
   interfaces/     FastAPI app + one router module per resource

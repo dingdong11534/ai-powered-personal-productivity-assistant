@@ -64,9 +64,18 @@ from fastapi.staticfiles import StaticFiles
 
 from app.conversations.exceptions import ConversationNotFoundError, MessageNotFoundError
 from app.core.config import get_settings
+from app.core.permissions import PermissionDenied
+from app.files.exceptions import (
+    FileAccessDeniedError,
+    FileNotFoundInWorkspaceError,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+)
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
 from app.interfaces.api.conversations import router as conversations_router
+from app.interfaces.api.files import router as files_router
 from app.interfaces.api.habits import router as habits_router
+
 from app.interfaces.api.memories import router as memories_router
 from app.interfaces.api.notifications import router as notifications_router
 from app.interfaces.api.pomodoro import router as pomodoro_router
@@ -123,8 +132,12 @@ NOT_FOUND_EXCEPTIONS = (
     ConversationNotFoundError,
     MessageNotFoundError,
     MemoryNotFoundError,
+    FileNotFoundInWorkspaceError,
 )
 BAD_REQUEST_EXCEPTIONS = (SelfDependencyError, InvalidTimeRangeError)
+FORBIDDEN_EXCEPTIONS = (FileAccessDeniedError, PermissionDenied)
+PAYLOAD_TOO_LARGE_EXCEPTIONS = (FileTooLargeError,)
+UNSUPPORTED_MEDIA_EXCEPTIONS = (UnsupportedFileTypeError,)
 CONFLICT_EXCEPTIONS = (
     DependencyCycleError,
     DuplicateTagError,
@@ -141,6 +154,12 @@ for exc_type in NOT_FOUND_EXCEPTIONS:
     app.add_exception_handler(exc_type, _json_error(404))
 for exc_type in BAD_REQUEST_EXCEPTIONS:
     app.add_exception_handler(exc_type, _json_error(400))
+for exc_type in FORBIDDEN_EXCEPTIONS:
+    app.add_exception_handler(exc_type, _json_error(403))
+for exc_type in PAYLOAD_TOO_LARGE_EXCEPTIONS:
+    app.add_exception_handler(exc_type, _json_error(413))
+for exc_type in UNSUPPORTED_MEDIA_EXCEPTIONS:
+    app.add_exception_handler(exc_type, _json_error(415))
 for exc_type in CONFLICT_EXCEPTIONS:
     app.add_exception_handler(exc_type, _json_error(409))
 
@@ -155,6 +174,8 @@ app.include_router(schedule_router)
 app.include_router(notifications_router)
 app.include_router(conversations_router)
 app.include_router(memories_router)
+app.include_router(files_router)
+
 
 
 # Phase 3: Static Files and Web UI Dashboard

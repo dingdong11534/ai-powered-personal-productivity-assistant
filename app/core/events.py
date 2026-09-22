@@ -87,3 +87,9 @@ class EventBus:
     def subscriber_count(self, event_name: str) -> int:
         """Number of handlers currently subscribed to `event_name` (test helper)."""
         return len(self._subscribers.get(event_name, []))
+
+
+# Process-local audit seam for operations that do not have a database record of
+# their own (such as workspace files). Subscribers may persist or display these
+# events without coupling the file service to a storage implementation.
+file_events = EventBus()

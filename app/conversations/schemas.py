@@ -5,11 +5,15 @@ from pydantic import BaseModel, Field
 
 
 class MessageCreate(BaseModel):
-    role: str = Field(..., description="Role: user, assistant, system, or tool")
+    role: str = Field(default="user", description="Role: user, assistant, system, or tool")
     content: str | None = Field(default=None, description="Text content of the message")
     tool_calls: str | None = Field(default=None, description="JSON string of tool calls requested")
     tool_call_id: str | None = Field(default=None, description="Tool call identifier")
     name: str | None = Field(default=None, description="Tool name if role is tool")
+    authorize_destructive: bool = Field(
+        default=False,
+        description="Explicit user authorization for destructive AI tool calls in this request.",
+    )
 
 
 class MessageRead(BaseModel):
