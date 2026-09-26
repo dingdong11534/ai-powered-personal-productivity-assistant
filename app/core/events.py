@@ -93,3 +93,9 @@ class EventBus:
 # their own (such as workspace files). Subscribers may persist or display these
 # events without coupling the file service to a storage implementation.
 file_events = EventBus()
+
+# Process-local audit seam for all outbound HTTP requests made through the
+# SSRF-safe ExternalHttpClient. Every request attempt — successful, blocked, or
+# failed — is published here with method/domain/outcome so subscribers can
+# log, alert on, or inspect external network activity.
+external_events = EventBus()

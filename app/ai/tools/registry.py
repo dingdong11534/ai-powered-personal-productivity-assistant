@@ -21,10 +21,49 @@ class ToolRegistry:
     def get_tool(self, name: str) -> BaseTool | None:
         return self._tools.get(name)
 
-    def get_tools_schema(self) -> list[dict[str, Any]]:
-        """Format registered tools into OpenAI tool schema format."""
+    def get_tools_schema(self, query: str | None = None, is_local: bool = False) -> list[dict[str, Any]]:
+        """Format registered tools into OpenAI tool schema format, optionally filtering for local efficiency."""
+        tools = list(self._tools.values())
+        if is_local and query:
+            q = query.lower()
+            matched_names = set()
+
+            # Domain keyword mapping
+            if any(w in q for w in ("task", "todo", "priority", "deadline", "status", "complete")):
+                matched_names.update(["create_task", "update_task", "delete_task", "list_tasks", "get_task"])
+            if any(w in q for w in ("project", "workspace project")):
+                matched_names.update(["create_project", "update_project", "archive_project", "delete_project", "list_projects"])
+            if any(w in q for w in ("habit", "streak", "routine")):
+                matched_names.update(["create_habit", "update_habit", "complete_habit", "delete_habit", "list_habits"])
+            if any(w in q for w in ("pomodoro", "pomo", "focus", "timer")):
+                matched_names.update(["start_pomodoro", "end_pomodoro", "delete_pomodoro_session", "list_pomodoro_sessions"])
+            if any(w in q for w in ("remind", "reminder", "alert")):
+                matched_names.update(["create_reminder", "delete_reminder", "list_reminders"])
+            if any(w in q for w in ("schedule", "calendar", "event", "meeting", "block", "slot")):
+                matched_names.update(["create_schedule_item", "update_schedule_item", "delete_schedule_item", "list_schedule_items"])
+            if any(w in q for w in ("memory", "remember", "preference", "forget", "recall")):
+                matched_names.update(["remember_information", "delete_memory", "list_memories"])
+            if any(w in q for w in ("file", "document", "notes.txt", "notes", "write file", "read file", "list file")):
+                matched_names.update(["create_workspace_file", "read_workspace_file", "list_workspace_files", "delete_workspace_file"])
+            if any(w in q for w in ("delete", "remove", "destroy", "erase")):
+                matched_names.update([
+                    "delete_task",
+                    "delete_project",
+                    "delete_habit",
+                    "delete_pomodoro_session",
+                    "delete_reminder",
+                    "delete_schedule_item",
+                    "delete_memory",
+                    "delete_workspace_file",
+                ])
+            if any(w in q for w in ("weather", "temperature", "forecast", "rain", "sunny", "humid", "wind", "degrees")):
+                matched_names.update(["get_current_weather"])
+
+            if matched_names:
+                tools = [t for t in tools if t.name in matched_names]
+
         schemas = []
-        for tool in self._tools.values():
+        for tool in tools:
             schemas.append({
                 "type": "function",
                 "function": {

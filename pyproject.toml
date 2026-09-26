@@ -8,6 +8,9 @@ readme = "README.md"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "live: marks tests that make real external network calls (deselect with '-m \"not live\"')",
+]
 
 [tool.ruff]
 line-length = 100

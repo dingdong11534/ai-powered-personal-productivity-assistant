@@ -38,10 +38,13 @@ def test_destructive_is_denied():
         checker.check(request)
 
 
-def test_external_is_denied():
+def test_external_is_allowed():
+    """Phase 7: EXTERNAL scope is now allowed by PermissionChecker.
+    Security is enforced at the HTTP client layer (domain allowlist + SSRF guard),
+    not at the permission gate.
+    """
     checker = PermissionChecker()
     request = PermissionRequest(
         scope=PermissionScope.EXTERNAL, actor="ai", description="call weather API"
     )
-    with pytest.raises(PermissionDenied):
-        checker.check(request)
+    checker.check(request)  # must not raise

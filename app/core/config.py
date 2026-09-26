@@ -107,19 +107,54 @@ class Settings(BaseSettings):
     )
 
     # --- AI layer ---
+    ai_mode: str = Field(
+        default="online",
+        description="Current AI operating mode: 'online' (cloud API like Groq), 'offline' (local like Ollama), or 'mock'.",
+    )
     ai_provider: str = Field(
-        default="mock",
+        default="groq",
         description="Which AI backend adapter to use, e.g. 'mock', 'openai', "
         "'anthropic', 'groq', 'ollama'. 'mock' uses the local mock adapter.",
     )
     ai_api_key: str | None = Field(default=None, repr=False)
     ai_model: str = Field(
-        default="gpt-4o-mini",
+        default="qwen/qwen3.8-27b",
         description="Model name to pass to the AI provider.",
     )
     ai_base_url: str = Field(
-        default="https://api.openai.com/v1",
+        default="https://api.groq.com/openai/v1",
         description="Base URL for OpenAI-compatible endpoint (e.g. Ollama or vLLM or Groq).",
+    )
+
+    # Dedicated Online (Cloud API) configuration
+    online_ai_provider: str = Field(default="groq")
+    online_ai_model: str = Field(default="qwen/qwen3.8-27b")
+    online_ai_base_url: str = Field(default="https://api.groq.com/openai/v1")
+    online_ai_api_key: str | None = Field(default=None, repr=False)
+
+    # Dedicated Offline (Local LLM) configuration
+    offline_ai_provider: str = Field(default="ollama")
+    offline_ai_model: str = Field(default="qwen2.5:1.5b")
+    offline_ai_base_url: str = Field(default="http://localhost:11434/v1")
+    offline_ai_api_key: str | None = Field(default="ollama", repr=False)
+
+    # --- External integrations (Phase 7) ---
+    # Domain allowlist: exact hostnames the SSRF-safe client is permitted to reach.
+    # Add entries here (or via EXTERNAL_ALLOWED_DOMAINS env var as comma-separated
+    # list) before registering any tool that makes external network requests.
+    external_allowed_domains: list[str] = Field(
+        default=["api.open-meteo.com", "geocoding-api.open-meteo.com"],
+        description="Exact hostnames the ExternalHttpClient is permitted to contact.",
+    )
+    external_request_timeout_seconds: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum seconds to wait for an external HTTP response.",
+    )
+    external_max_response_bytes: int = Field(
+        default=1_000_000,
+        ge=1,
+        description="Maximum response body size in bytes from an external request.",
     )
 
     def ensure_data_dir(self) -> Path:

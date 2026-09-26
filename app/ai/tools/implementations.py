@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.ai.tools.base import BaseTool
 from app.ai.tools.registry import ToolRegistry
 from app.core.permissions import PermissionScope
+from app.external.client import ExternalRequestError
+from app.external.weather import WeatherService
 from app.files.service import FileService
 from app.habits.schemas import HabitCreate
 
@@ -164,6 +166,24 @@ class CompleteTaskTool(BaseTool):
         return _to_dict(task)
 
 
+class DeleteTaskTool(BaseTool):
+    name = "delete_task"
+    description = "Permanently delete a task by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "integer", "description": "ID of the task to delete"},
+        },
+        "required": ["task_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = TaskService(session)
+        svc.delete_task(args["task_id"])
+        return {"success": True, "message": f"Task #{args['task_id']} deleted successfully."}
+
+
 # ---------------- PROJECTS ----------------
 class CreateProjectTool(BaseTool):
     name = "create_project"
@@ -222,6 +242,24 @@ class ArchiveProjectTool(BaseTool):
         svc = ProjectService(session)
         proj = svc.archive_project(args["project_id"])
         return _to_dict(proj)
+
+
+class DeleteProjectTool(BaseTool):
+    name = "delete_project"
+    description = "Permanently delete a project by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "project_id": {"type": "integer", "description": "ID of project to delete"},
+        },
+        "required": ["project_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = ProjectService(session)
+        svc.delete_project(args["project_id"])
+        return {"success": True, "message": f"Project #{args['project_id']} deleted successfully."}
 
 
 # ---------------- HABITS ----------------
@@ -285,6 +323,24 @@ class GetHabitStatisticsTool(BaseTool):
         return _to_dict(stats)
 
 
+class DeleteHabitTool(BaseTool):
+    name = "delete_habit"
+    description = "Permanently delete a habit tracker and its completions by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "habit_id": {"type": "integer", "description": "ID of habit to delete"},
+        },
+        "required": ["habit_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = HabitService(session)
+        svc.delete_habit(args["habit_id"])
+        return {"success": True, "message": f"Habit #{args['habit_id']} deleted successfully."}
+
+
 # ---------------- POMODORO ----------------
 class StartPomodoroTool(BaseTool):
     name = "start_pomodoro"
@@ -323,6 +379,24 @@ class EndPomodoroTool(BaseTool):
             interrupted=args.get("interrupted", False),
         )
         return _to_dict(pomo)
+
+
+class DeletePomodoroSessionTool(BaseTool):
+    name = "delete_pomodoro_session"
+    description = "Permanently delete a Pomodoro session record by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "integer", "description": "ID of Pomodoro session to delete"},
+        },
+        "required": ["session_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = PomodoroSessionService(session)
+        svc.delete_session(args["session_id"])
+        return {"success": True, "message": f"Pomodoro session #{args['session_id']} deleted successfully."}
 
 
 # ---------------- REMINDERS ----------------
@@ -374,6 +448,24 @@ class ListRemindersTool(BaseTool):
         return {"reminders": [_to_dict(r) for r in rems]}
 
 
+class DeleteReminderTool(BaseTool):
+    name = "delete_reminder"
+    description = "Permanently delete a reminder by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "reminder_id": {"type": "integer", "description": "ID of reminder to delete"},
+        },
+        "required": ["reminder_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = ReminderService(session)
+        svc.delete_reminder(args["reminder_id"])
+        return {"success": True, "message": f"Reminder #{args['reminder_id']} deleted successfully."}
+
+
 # ---------------- SCHEDULE ----------------
 class CreateScheduleItemTool(BaseTool):
     name = "create_schedule_item"
@@ -411,6 +503,24 @@ class ListScheduleTool(BaseTool):
         svc = ScheduleService(session)
         items = svc.list_schedule_items()
         return {"schedule_items": [_to_dict(s) for s in items]}
+
+
+class DeleteScheduleItemTool(BaseTool):
+    name = "delete_schedule_item"
+    description = "Permanently delete a schedule block by ID. Requires explicit user authorization."
+    scope = PermissionScope.DESTRUCTIVE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "item_id": {"type": "integer", "description": "ID of schedule item to delete"},
+        },
+        "required": ["item_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = ScheduleService(session)
+        svc.delete_schedule_item(args["item_id"])
+        return {"success": True, "message": f"Schedule item #{args['item_id']} deleted successfully."}
 
 
 # ---------------- NOTIFICATIONS ----------------
@@ -712,31 +822,86 @@ class DeleteWorkspaceFileTool(BaseTool):
         return {"success": True, "message": f"Path '{args['path']}' deleted successfully."}
 
 
+# ---------------- EXTERNAL: WEATHER ----------------
+class GetCurrentWeatherTool(BaseTool):
+    """Fetch current weather conditions for any location via Open-Meteo.
+
+    Scope: EXTERNAL — routes through the SSRF-safe ExternalHttpClient.
+    Security: the target domain (api.open-meteo.com) is fixed in WeatherService;
+    the AI can only supply the `location` string, not the URL or domain.
+    """
+
+    name = "get_current_weather"
+    description = (
+        "Get the current weather conditions for a location (city name, region, or country). "
+        "Returns temperature (Celsius), humidity, wind speed, and a plain-English description "
+        "of current conditions. Uses the free Open-Meteo API — no API key required."
+    )
+    scope = PermissionScope.EXTERNAL
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "Name of the city or location to get weather for (e.g. 'London', 'New York', 'Tokyo').",
+            }
+        },
+        "required": ["location"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        location = args.get("location", "").strip()
+        if not location:
+            return {"success": False, "error": "location is required"}
+        try:
+            svc = WeatherService()
+            weather = svc.get_current_weather(location)
+            return {
+                "success": True,
+                "location": f"{weather['location_name']}, {weather['country']}".strip(", "),
+                "temperature": f"{weather['temperature_c']}°C",
+                "humidity": f"{weather['humidity_pct']}%",
+                "wind_speed": f"{weather['wind_speed_mph']} mph",
+                "conditions": weather["conditions"],
+                "as_of": weather["data_time"],
+            }
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        except ExternalRequestError as e:
+            return {"success": False, "error": f"Weather service error: {e}"}
+
+
 def get_default_tool_registry() -> ToolRegistry:
-    """Helper to construct a ToolRegistry populated with all 30 standard tools."""
+    """Helper to construct a ToolRegistry populated with all standard tools."""
     registry = ToolRegistry()
     registry.register(CreateTaskTool())
     registry.register(UpdateTaskTool())
     registry.register(ListTasksTool())
     registry.register(SearchTasksTool())
     registry.register(CompleteTaskTool())
+    registry.register(DeleteTaskTool())
 
     registry.register(CreateProjectTool())
     registry.register(ListProjectsTool())
     registry.register(ArchiveProjectTool())
+    registry.register(DeleteProjectTool())
 
     registry.register(CreateHabitTool())
     registry.register(CompleteHabitTool())
     registry.register(GetHabitStatisticsTool())
+    registry.register(DeleteHabitTool())
 
     registry.register(StartPomodoroTool())
     registry.register(EndPomodoroTool())
+    registry.register(DeletePomodoroSessionTool())
 
     registry.register(CreateReminderTool())
     registry.register(ListRemindersTool())
+    registry.register(DeleteReminderTool())
 
     registry.register(CreateScheduleItemTool())
     registry.register(ListScheduleTool())
+    registry.register(DeleteScheduleItemTool())
 
     registry.register(ListNotificationsTool())
     registry.register(MarkNotificationReadTool())
@@ -753,4 +918,6 @@ def get_default_tool_registry() -> ToolRegistry:
     registry.register(UpdateWorkspaceFileTool())
     registry.register(SearchWorkspaceFilesTool())
     registry.register(DeleteWorkspaceFileTool())
+
+    registry.register(GetCurrentWeatherTool())
     return registry

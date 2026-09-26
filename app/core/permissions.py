@@ -87,21 +87,21 @@ class PermissionDenied(Exception):
 class PermissionChecker:
     """Decides whether a PermissionRequest is allowed.
 
-    Phase 0 policy: READ and WRITE are always allowed; DESTRUCTIVE and
-    EXTERNAL are always denied. This is a deliberately conservative
-    default — later phases replace `check()`'s body with real policy
-    (confirmation prompts, config-driven allow-lists) rather than
-    changing its signature, so callers written against this scaffold
-    don't need to change when the policy does.
+    Scope policy:
+    - READ, WRITE:    always allowed.
+    - EXTERNAL:       allowed — security is enforced at the HTTP client layer
+                      (domain allowlist + SSRF DNS guard in app.external.client),
+                      not here. Requiring per-request user authorization for
+                      benign network reads (like fetching weather) would be wrong
+                      UX and adds no safety: the target domain is hardcoded in
+                      tool code, and ExternalHttpClient rejects anything not in
+                      the allowlist regardless of how the tool is called.
+    - DESTRUCTIVE:    denied unless `request.authorized` is True (set only by the
+                      trusted interface layer after explicit user confirmation).
     """
 
     def check(self, request: PermissionRequest) -> None:
         """Raise PermissionDenied if `request` is not allowed; else return None."""
-        if request.scope is PermissionScope.EXTERNAL:
-            raise PermissionDenied(
-                f"{request.actor} requested {request.scope.value} action "
-                f"({request.description!r}) — not yet supported."
-            )
         if request.scope is PermissionScope.DESTRUCTIVE and not request.authorized:
             raise PermissionDenied(
                 f"{request.actor} requested destructive action "
