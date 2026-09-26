@@ -1,6 +1,9 @@
 """FastAPI router for Conversations and AI Assistant chat interactions."""
 
-from fastapi import APIRouter, Depends, Response, status
+import json
+
+from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.ai.assistant import AssistantCore
@@ -58,13 +61,37 @@ def get_messages(
     return ConversationService(session).get_messages(conversation_id)
 
 
-@router.post("/{conversation_id}/messages", response_model=MessageRead, status_code=status.HTTP_201_CREATED)
+@router.post("/{conversation_id}/messages", status_code=status.HTTP_201_CREATED)
 def send_message(
     conversation_id: int,
     data: MessageCreate,
+    stream: bool = Query(default=False),
     session: Session = Depends(get_db),
-) -> MessageRead:
-    """Send a user message to the conversation and trigger the AI Assistant."""
+):
+    """Send a user message to the conversation and trigger the AI Assistant.
+
+    If stream=True, returns an SSE text/event-stream StreamingResponse.
+    Otherwise returns the saved MessageRead model with 201 Created status.
+    """
     assistant = AssistantCore(session, destructive_authorized=data.authorize_destructive)
     user_text = data.content or ""
+
+    if stream:
+        def sse_generator():
+            try:
+                for event in assistant.handle_user_message_stream(conversation_id, user_text):
+                    yield f"data: {json.dumps(event, default=str)}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'event': 'error', 'error': str(exc)}, default=str)}\n\n"
+
+        return StreamingResponse(
+            sse_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     return assistant.handle_user_message(conversation_id, user_text)

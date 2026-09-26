@@ -11,7 +11,7 @@ only lifecycle-ending action.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.projects.schemas import ProjectCreate, ProjectRead, ProjectUpdate
@@ -65,3 +65,18 @@ def archive_project(
     project_id: int, service: ProjectService = Depends(get_project_service)
 ) -> ProjectRead:
     return service.archive_project(project_id)
+
+
+@router.post("/{project_id}/unarchive", response_model=ProjectRead)
+def unarchive_project(
+    project_id: int, service: ProjectService = Depends(get_project_service)
+) -> ProjectRead:
+    return service.unarchive_project(project_id)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_project(
+    project_id: int, service: ProjectService = Depends(get_project_service)
+) -> Response:
+    service.delete_project(project_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

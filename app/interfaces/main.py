@@ -72,6 +72,7 @@ from app.files.exceptions import (
     UnsupportedFileTypeError,
 )
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
+from app.interfaces.api.ai_config import router as ai_config_router
 from app.interfaces.api.conversations import router as conversations_router
 from app.interfaces.api.files import router as files_router
 from app.interfaces.api.habits import router as habits_router
@@ -175,6 +176,8 @@ app.include_router(notifications_router)
 app.include_router(conversations_router)
 app.include_router(memories_router)
 app.include_router(files_router)
+app.include_router(ai_config_router)
+
 
 
 

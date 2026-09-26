@@ -15,23 +15,25 @@ from app.tasks.service import TaskService
 class ContextBuilder:
     """Deliberately selects relevant structured information for the AI prompt."""
 
-    def build_context(self, session: Session, query: str | None = None) -> dict[str, Any]:
+    def build_context(self, session: Session, query: str | None = None, is_local: bool = False) -> dict[str, Any]:
         task_svc = TaskService(session)
         habit_svc = HabitService(session)
         sched_svc = ScheduleService(session)
         memory_svc = MemoryService(session)
 
+        limit_count = 3 if is_local else 10
+
         # High priority tasks (1=Critical, 2=High)
         high_priority = task_svc.list_tasks(completed=False)
-        high_priority = [t for t in high_priority if t.priority in (1, 2)][:10]
+        high_priority = [t for t in high_priority if t.priority in (1, 2)][:limit_count]
 
         # Upcoming deadlines
         deadlines = [t for t in task_svc.list_tasks(completed=False) if t.deadline is not None]
         deadlines.sort(key=lambda t: t.deadline)
-        deadlines = deadlines[:10]
+        deadlines = deadlines[:limit_count]
 
         # Active habits
-        habits = habit_svc.list_habits(include_archived=False)
+        habits = habit_svc.list_habits(include_archived=False)[:limit_count]
         habit_summary = []
         for h in habits:
             stats = habit_svc.get_statistics(h.id)
@@ -44,10 +46,11 @@ class ContextBuilder:
             })
 
         # Today's schedule
-        schedule_items = sched_svc.list_schedule_items()
+        schedule_items = sched_svc.list_schedule_items()[:limit_count]
 
         # Relevant memories
-        relevant_mems = memory_svc.retrieve_relevant_memories(query=query, limit=5)
+        mem_limit = 2 if is_local else 5
+        relevant_mems = memory_svc.retrieve_relevant_memories(query=query, limit=mem_limit)
 
         return {
             "high_priority_tasks": [_to_dict(t) for t in high_priority],
@@ -57,8 +60,8 @@ class ContextBuilder:
             "relevant_memories": [_to_dict(m) for m in relevant_mems],
         }
 
-    def format_context_prompt(self, session: Session, query: str | None = None) -> str:
-        ctx = self.build_context(session, query=query)
+    def format_context_prompt(self, session: Session, query: str | None = None, is_local: bool = False) -> str:
+        ctx = self.build_context(session, query=query, is_local=is_local)
         lines = ["=== CURRENT SYSTEM CONTEXT ==="]
 
         lines.append("\n-- High Priority Pending Tasks --")

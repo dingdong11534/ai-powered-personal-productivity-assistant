@@ -4,7 +4,7 @@ Pomodoro API routes. Same thin-route discipline as every other router.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.pomodoro.schemas import PomodoroSessionCreate, PomodoroSessionEnd, PomodoroSessionRead
@@ -50,3 +50,11 @@ def end_session(
     service: PomodoroSessionService = Depends(get_pomodoro_service),
 ) -> PomodoroSessionRead:
     return service.end_session(session_id, interrupted=data.interrupted)
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_session(
+    session_id: int, service: PomodoroSessionService = Depends(get_pomodoro_service)
+) -> Response:
+    service.delete_session(session_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

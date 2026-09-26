@@ -71,6 +71,16 @@ class HabitService:
         archived_at = datetime.now(timezone.utc).replace(tzinfo=None)
         return self.repository.update(habit, {"archived_at": archived_at})
 
+    def unarchive_habit(self, habit_id: int) -> Habit:
+        """Restore an archived habit to active status."""
+        habit = self.get_habit(habit_id)
+        return self.repository.update(habit, {"archived_at": None})
+
+    def delete_habit(self, habit_id: int) -> None:
+        """Delete a habit and its completions (cascade)."""
+        habit = self.get_habit(habit_id)
+        self.repository.delete(habit)
+
     def record_completion(
         self, habit_id: int, completed_at: datetime | None = None
     ) -> HabitCompletion:

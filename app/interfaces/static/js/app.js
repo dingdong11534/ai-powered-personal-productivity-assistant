@@ -9,7 +9,11 @@ const state = {
   pomodoroInterval: null,
   allProjects: [],
   allTags: [],
-  allTasks: []
+  allTasks: [],
+  responseTimes: [],
+  chatTimerInterval: null,
+  pendingDestructiveAction: false,
+  aiStatus: null
 };
 
 // UI Initialization
@@ -19,7 +23,69 @@ document.addEventListener('DOMContentLoaded', () => {
   initSearch();
   initDropdownData();
   loadCurrentView();
+  loadAIMode();
+
+  // Auto-refresh when tab/window regains focus to eliminate stale data
+  window.addEventListener('focus', () => {
+    if (state.currentTab !== 'assistant') {
+      loadCurrentView();
+    }
+    initDropdownData();
+    loadAIMode();
+  });
 });
+
+// AI Mode Management
+async function loadAIMode() {
+  try {
+    const status = await api('/ai/mode');
+    updateAIModeUI(status);
+  } catch (e) {}
+}
+
+function updateAIModeUI(status) {
+  if (!status) return;
+  state.aiStatus = status;
+  const isOnline = status.mode === 'online';
+  const labelText = isOnline
+    ? `🌐 Online (${status.active_provider === 'groq' ? 'Groq' : 'Cloud'})`
+    : `💻 Offline (${status.active_model || 'Ollama'})`;
+  const btnClass = isOnline ? 'ai-mode-switch-btn mode-online' : 'ai-mode-switch-btn mode-offline';
+  const tooltip = isOnline
+    ? `Online Mode Active: ${status.active_model} via ${status.active_provider}. Click to switch to Offline (Local Ollama).`
+    : `Offline Mode Active: ${status.active_model} via local Ollama. Click to switch to Online (Cloud API).`;
+
+  const globalBtn = document.getElementById('global-ai-mode-btn');
+  const globalText = document.getElementById('global-ai-mode-text');
+  if (globalBtn && globalText) {
+    globalBtn.className = btnClass;
+    globalBtn.title = tooltip;
+    globalText.innerText = labelText;
+  }
+
+  const asstBtn = document.getElementById('assistant-ai-mode-btn');
+  const asstText = document.getElementById('assistant-ai-mode-text');
+  if (asstBtn && asstText) {
+    asstBtn.className = btnClass;
+    asstBtn.title = tooltip;
+    asstText.innerText = labelText;
+  }
+}
+
+async function toggleAIMode() {
+  const currentMode = state.aiStatus ? state.aiStatus.mode : 'online';
+  const newMode = currentMode === 'online' ? 'offline' : 'online';
+  try {
+    const updated = await api('/ai/mode', {
+      method: 'POST',
+      body: JSON.stringify({ mode: newMode })
+    });
+    updateAIModeUI(updated);
+    showToast(newMode === 'online' ? 'Switched to 🌐 Online Mode (Groq)' : 'Switched to 💻 Offline Mode (Local Ollama)', 'success');
+  } catch (err) {
+    showToast('Failed to switch AI mode', 'error');
+  }
+}
 
 // Toast Notifications
 function showToast(message, type = 'error') {
@@ -45,6 +111,118 @@ function escapeHTML(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/**
+ * Render LLM-generated markdown to safe HTML.
+ * Handles the most common Qwen/Groq output patterns without any external dependency.
+ * User-generated content still goes through escapeHTML — this is only for assistant replies.
+ */
+function renderMarkdown(str) {
+  if (!str) return '';
+  let s = String(str);
+
+  // 1. Escape HTML first to prevent injection
+  s = s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // 2. Fenced code blocks (``` ... ```) — must happen before inline transforms
+  s = s.replace(/```([\s\S]*?)```/g, (_, code) =>
+    `<pre class="md-code-block"><code>${code.trim()}</code></pre>`);
+
+  // 3. Inline code (`code`)
+  s = s.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+
+  // Process line by line for block elements
+  const lines = s.split('\n');
+  const output = [];
+  let inList = null; // 'ul' | 'ol' | null
+  let inBlockquote = false;
+
+  const closeList = () => {
+    if (inList) { output.push(`</${inList}>`); inList = null; }
+  };
+  const closeBlockquote = () => {
+    if (inBlockquote) { output.push('</blockquote>'); inBlockquote = false; }
+  };
+
+  for (const rawLine of lines) {
+    let line = rawLine;
+
+    // Horizontal rule
+    if (/^\s*(---+|___+|\*\*\*+)\s*$/.test(line)) {
+      closeList(); closeBlockquote();
+      output.push('<hr class="md-hr">');
+      continue;
+    }
+
+    // ATX headings
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      closeList(); closeBlockquote();
+      const lvl = headingMatch[1].length;
+      const hText = applyInlineMarkdown(headingMatch[2]);
+      output.push(`<h${lvl} class="md-h${lvl}">${hText}</h${lvl}>`);
+      continue;
+    }
+
+    // Blockquote
+    const bqMatch = line.match(/^>\s*(.*)/);
+    if (bqMatch) {
+      closeList();
+      if (!inBlockquote) { output.push('<blockquote class="md-blockquote">'); inBlockquote = true; }
+      output.push(`<p>${applyInlineMarkdown(bqMatch[1])}</p>`);
+      continue;
+    } else {
+      closeBlockquote();
+    }
+
+    // Unordered list item
+    const ulMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (ulMatch) {
+      if (inList !== 'ul') { closeList(); output.push('<ul class="md-ul">'); inList = 'ul'; }
+      output.push(`<li>${applyInlineMarkdown(ulMatch[1])}</li>`);
+      continue;
+    }
+
+    // Ordered list item
+    const olMatch = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (olMatch) {
+      if (inList !== 'ol') { closeList(); output.push('<ol class="md-ol">'); inList = 'ol'; }
+      output.push(`<li>${applyInlineMarkdown(olMatch[1])}</li>`);
+      continue;
+    }
+
+    // Regular text — close any open list/blockquote
+    closeList(); closeBlockquote();
+
+    if (line.trim() === '') {
+      output.push('<br>');
+    } else {
+      output.push(`<p class="md-p">${applyInlineMarkdown(line)}</p>`);
+    }
+  }
+
+  closeList(); closeBlockquote();
+  return output.join('');
+}
+
+function applyInlineMarkdown(s) {
+  // Bold + italic: ***text***
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+  // Strikethrough: ~~text~~
+  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  // Inline code (already wrapped above but handle again for safety)
+  s = s.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  return s;
 }
 
 // API Helper
@@ -75,7 +253,7 @@ function initNavigation() {
   });
 }
 
-function switchTab(tabName) {
+function switchTab(tabName, param) {
   state.currentTab = tabName;
   document.querySelectorAll('.nav-item button').forEach(b => b.classList.remove('active'));
   const activeBtn = document.querySelector(`.nav-item button[data-target="${tabName}"]`);
@@ -86,13 +264,13 @@ function switchTab(tabName) {
   if (activeSec) activeSec.classList.add('active');
 
   document.getElementById('page-title').innerText = tabName.charAt(0).toUpperCase() + tabName.slice(1);
-  loadCurrentView();
+  loadCurrentView(param);
 }
 
-function loadCurrentView() {
+function loadCurrentView(param) {
   switch (state.currentTab) {
     case 'dashboard': loadDashboardView(); break;
-    case 'tasks': loadTasksView(); break;
+    case 'tasks': loadTasksView(param); break;
     case 'projects': loadProjectsView(); break;
     case 'habits': loadHabitsView(); break;
     case 'pomodoro': loadPomodoroView(); break;
@@ -107,18 +285,35 @@ function loadCurrentView() {
   updateNotificationDot();
 }
 
-// Theme Handling
+// ──────────────────────────────────────────────────
+// Sketchnote Rough.js Helper System
+// ──────────────────────────────────────────────────
+const Sketch = {
+  getInkColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || '#2B2825';
+  },
+
+  getTheme() {
+    return document.documentElement.getAttribute('data-theme') || 'dark';
+  }
+};
+
+// Theme Handling (Paper / Chalkboard)
 function initTheme() {
   const theme = localStorage.getItem('theme') || 'dark';
   document.documentElement.setAttribute('data-theme', theme);
   const select = document.getElementById('setting-theme-select');
   if (select) select.value = theme;
+  updateThemeToggleUI(theme);
 
-  document.getElementById('theme-toggle-btn').addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    changeTheme(next);
-  });
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      changeTheme(next);
+    });
+  }
 }
 
 function changeTheme(theme) {
@@ -126,21 +321,130 @@ function changeTheme(theme) {
   localStorage.setItem('theme', theme);
   const select = document.getElementById('setting-theme-select');
   if (select) select.value = theme;
+  updateThemeToggleUI(theme);
+}
+
+function updateThemeToggleUI(theme) {
+  const btn = document.getElementById('theme-toggle-btn');
+  if (!btn) return;
+  const isChalkboard = theme === 'dark';
+  btn.title = isChalkboard ? 'Switch to Paper (Light) Theme' : 'Switch to Chalkboard (Dark) Theme';
+  btn.setAttribute('aria-label', btn.title);
+  btn.innerHTML = isChalkboard
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`
+    : `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 }
 
 // Search
 function initSearch() {
   const input = document.getElementById('global-search-input');
-  input.addEventListener('keypress', e => {
+  const dropdown = document.getElementById('global-search-dropdown');
+  let debounceTimer = null;
+
+  if (!input || !dropdown) return;
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(debounceTimer);
+    if (!q) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      return;
+    }
+    debounceTimer = setTimeout(() => performSearch(q, dropdown), 250);
+  });
+
+  input.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       const q = input.value.trim();
       if (q) {
-        switchTab('tasks');
-        document.getElementById('tasks-list-container').innerHTML = `<p>Searching for "${escapeHTML(q)}"...</p>`;
-        api(`/tasks?search=${encodeURIComponent(q)}`).then(tasks => renderTaskList(tasks, 'tasks-list-container'));
+        dropdown.style.display = 'none';
+        switchTab('tasks', q);
       }
     }
+    if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+      input.value = '';
+    }
   });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', e => {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
+async function performSearch(q, dropdown) {
+  try {
+    const encoded = encodeURIComponent(q);
+    const [tasks, projects, memories] = await Promise.all([
+      api(`/tasks?search=${encoded}`).catch(() => []),
+      api('/projects?include_archived=false').catch(() => []),
+      api('/memories?include_archived=false').catch(() => [])
+    ]);
+
+    const qLower = q.toLowerCase();
+    const matchedProjects = (projects || []).filter(p =>
+      (p.name || '').toLowerCase().includes(qLower) ||
+      (p.description || '').toLowerCase().includes(qLower)
+    );
+    const matchedMemories = (memories || []).filter(m =>
+      (m.content || '').toLowerCase().includes(qLower) ||
+      (m.category || '').toLowerCase().includes(qLower)
+    );
+
+    const totalResults = (tasks || []).length + matchedProjects.length + matchedMemories.length;
+    if (totalResults === 0) {
+      dropdown.innerHTML = `<div class="search-no-results">No results for "${escapeHTML(q)}"</div>`;
+      dropdown.style.display = 'block';
+      return;
+    }
+
+    let html = '';
+    if (tasks && tasks.length > 0) {
+      html += `<div class="search-section-label">Tasks (${tasks.length})</div>`;
+      html += tasks.slice(0, 5).map(t => `
+        <div class="search-result-item" onclick="switchTab('tasks', '${escapeHTML(t.title)}'); document.getElementById('global-search-dropdown').style.display='none'; document.getElementById('global-search-input').value=''">
+          <span class="search-result-icon">✏️</span>
+          <div>
+            <div class="search-result-title">${escapeHTML(t.title)}</div>
+            <div class="search-result-sub">${escapeHTML(t.status)} · Priority ${t.priority}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    if (matchedProjects.length > 0) {
+      html += `<div class="search-section-label">Projects (${matchedProjects.length})</div>`;
+      html += matchedProjects.slice(0, 3).map(p => `
+        <div class="search-result-item" onclick="switchTab('projects'); document.getElementById('global-search-dropdown').style.display='none'; document.getElementById('global-search-input').value=''">
+          <span class="search-result-icon">📁</span>
+          <div>
+            <div class="search-result-title">${escapeHTML(p.name)}</div>
+            <div class="search-result-sub">${escapeHTML(p.description || 'No description')}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    if (matchedMemories.length > 0) {
+      html += `<div class="search-section-label">Memories (${matchedMemories.length})</div>`;
+      html += matchedMemories.slice(0, 3).map(m => `
+        <div class="search-result-item" onclick="switchTab('memories'); document.getElementById('global-search-dropdown').style.display='none'; document.getElementById('global-search-input').value=''">
+          <span class="search-result-icon">🧠</span>
+          <div>
+            <div class="search-result-title">${escapeHTML((m.content || '').slice(0, 60))}${(m.content || '').length > 60 ? '…' : ''}</div>
+            <div class="search-result-sub">${escapeHTML(m.category || 'memory')}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+  } catch (e) {
+    dropdown.style.display = 'none';
+  }
 }
 
 // Global Dropdowns
@@ -242,7 +546,7 @@ function renderRemindersDashboardList(reminders) {
 }
 
 // 2. TASKS VIEW
-async function loadTasksView() {
+async function loadTasksView(searchQuery) {
   await initDropdownData();
   const status = document.getElementById('task-filter-status').value;
   const priority = document.getElementById('task-filter-priority').value;
@@ -254,6 +558,7 @@ async function loadTasksView() {
   if (priority) query += `priority=${priority}&`;
   if (projectId) query += `project_id=${projectId}&`;
   if (tagId) query += `tag_id=${tagId}&`;
+  if (searchQuery) query += `search=${encodeURIComponent(searchQuery)}&`;
 
   const tasks = await api(query);
   renderTaskList(tasks, 'tasks-list-container');
@@ -311,7 +616,7 @@ async function toggleTaskComplete(taskId, markDone) {
 }
 
 async function deleteTask(taskId) {
-  if (!confirm('Are you sure you want to delete this task?')) return;
+  if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) return;
   try {
     await api(`/tasks/${taskId}`, { method: 'DELETE' });
     showToast('Task deleted', 'success');
@@ -340,9 +645,10 @@ async function loadProjectsView() {
       <p class="card-desc">${escapeHTML(p.description || 'No description.')}</p>
       <div style="margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center;">
         <button class="btn btn-secondary btn-sm" onclick="viewProjectTasks(${p.id}, '${escapeHTML(p.name)}')">View Tasks</button>
-        <div>
+        <div style="display:flex; gap:0.4rem;">
           <button class="btn btn-secondary btn-sm" onclick="openEditProjectModal(${p.id})">Edit</button>
-          ${!p.archived_at ? `<button class="btn btn-danger btn-sm" onclick="archiveProject(${p.id})">Archive</button>` : ''}
+          ${!p.archived_at ? `<button class="btn btn-secondary btn-sm" onclick="archiveProject(${p.id})">Archive</button>` : `<button class="btn btn-secondary btn-sm" onclick="unarchiveProject(${p.id})">Unarchive</button>`}
+          <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})">Delete</button>
         </div>
       </div>
     </div>
@@ -366,6 +672,24 @@ async function archiveProject(id) {
     await api(`/projects/${id}/archive`, { method: 'POST' });
     showToast('Project archived', 'success');
     loadProjectsView();
+  } catch (e) {}
+}
+
+async function unarchiveProject(id) {
+  try {
+    await api(`/projects/${id}/unarchive`, { method: 'POST' });
+    showToast('Project restored to active', 'success');
+    loadProjectsView();
+  } catch (e) {}
+}
+
+async function deleteProject(id) {
+  if (!confirm('Are you sure you want to delete this project? Associated tasks will be kept and unlinked. This cannot be undone.')) return;
+  try {
+    await api(`/projects/${id}`, { method: 'DELETE' });
+    showToast('Project deleted', 'success');
+    loadProjectsView();
+    initDropdownData();
   } catch (e) {}
 }
 
@@ -401,7 +725,8 @@ async function loadHabitsView() {
         </div>
         <div class="item-actions">
           ${!isArchived ? `<button class="btn btn-primary btn-sm" onclick="recordHabitCompletion(${h.id})">+ Complete Today</button>` : ''}
-          ${!isArchived ? `<button class="btn btn-secondary btn-sm" onclick="archiveHabit(${h.id})">Archive</button>` : ''}
+          ${!isArchived ? `<button class="btn btn-secondary btn-sm" onclick="archiveHabit(${h.id})">Archive</button>` : `<button class="btn btn-secondary btn-sm" onclick="unarchiveHabit(${h.id})">Unarchive</button>`}
+          <button class="btn btn-danger btn-sm" onclick="deleteHabit(${h.id})">Delete</button>
         </div>
       </div>
     `;
@@ -423,6 +748,23 @@ async function archiveHabit(habitId) {
   try {
     await api(`/habits/${habitId}/archive`, { method: 'POST' });
     showToast('Habit archived', 'success');
+    loadHabitsView();
+  } catch (e) {}
+}
+
+async function unarchiveHabit(habitId) {
+  try {
+    await api(`/habits/${habitId}/unarchive`, { method: 'POST' });
+    showToast('Habit restored to active', 'success');
+    loadHabitsView();
+  } catch (e) {}
+}
+
+async function deleteHabit(habitId) {
+  if (!confirm('Are you sure you want to delete this habit and all its completions? This cannot be undone.')) return;
+  try {
+    await api(`/habits/${habitId}`, { method: 'DELETE' });
+    showToast('Habit deleted', 'success');
     loadHabitsView();
   } catch (e) {}
 }
@@ -452,9 +794,21 @@ async function loadPomodoroView() {
           <div class="item-title">Session #${s.id} ${s.interrupted ? '<span class="badge badge-status-cancelled">Interrupted</span>' : '<span class="badge badge-status-done">Completed</span>'}</div>
           <div class="item-subtitle">Started: ${new Date(s.started_at).toLocaleTimeString()} | Duration: ${mins}m ${secs}s</div>
         </div>
+        <div class="item-actions">
+          <button class="btn btn-danger btn-sm" onclick="deletePomodoroSession(${s.id})">Delete</button>
+        </div>
       </div>
     `;
   }).join('');
+}
+
+async function deletePomodoroSession(sessionId) {
+  if (!confirm('Are you sure you want to delete this pomodoro session record? This cannot be undone.')) return;
+  try {
+    await api(`/pomodoro/${sessionId}`, { method: 'DELETE' });
+    showToast('Pomodoro session deleted', 'success');
+    loadPomodoroView();
+  } catch (e) {}
 }
 
 function updatePomodoroUI() {
@@ -557,7 +911,7 @@ async function loadScheduleView() {
 }
 
 async function deleteScheduleItem(id) {
-  if (!confirm('Delete schedule item?')) return;
+  if (!confirm('Are you sure you want to delete this schedule item? This cannot be undone.')) return;
   try {
     await api(`/schedule/${id}`, { method: 'DELETE' });
     showToast('Schedule item deleted', 'success');
@@ -599,7 +953,7 @@ async function fireReminder(id) {
 }
 
 async function deleteReminder(id) {
-  if (!confirm('Delete reminder?')) return;
+  if (!confirm('Are you sure you want to delete this reminder? This cannot be undone.')) return;
   try {
     await api(`/reminders/${id}`, { method: 'DELETE' });
     showToast('Reminder deleted', 'success');
@@ -931,16 +1285,18 @@ state.currentConversationId = null;
 async function loadAssistantView() {
   const conversations = await api('/conversations');
   const listContainer = document.getElementById('chat-conversations-list');
+  if (!listContainer) return;
+
   if (conversations.length === 0) {
-    listContainer.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem;">No chats yet.</p>';
+    listContainer.innerHTML = '<p style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">No chats yet.</p>';
     state.currentConversationId = null;
     updateChatInputState();
     return;
   }
 
   listContainer.innerHTML = conversations.map(c => `
-    <button class="btn btn-secondary btn-sm" style="width:100%; justify-content:flex-start; text-align:left; ${state.currentConversationId === c.id ? 'border-color:var(--accent-primary); background:rgba(99,102,241,0.1);' : ''}" onclick="selectConversation(${c.id})">
-      💬 ${escapeHTML(c.title || `Chat #${c.id}`)}
+    <button class="chat-convo-btn ${state.currentConversationId === c.id ? 'active' : ''}" onclick="selectConversation(${c.id})">
+      <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">💬 ${escapeHTML(c.title || `Chat #${c.id}`)}</span>
     </button>
   `).join('');
 
@@ -950,76 +1306,391 @@ async function loadAssistantView() {
   if (state.currentConversationId) {
     selectConversation(state.currentConversationId);
   }
+
+  initChatTextareaEvents();
+}
+
+function initChatTextareaEvents() {
+  const textarea = document.getElementById('chat-message-input');
+  if (!textarea || textarea.dataset.initialized) return;
+  textarea.dataset.initialized = 'true';
+
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const form = document.getElementById('chat-input-form');
+      if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+  });
+
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+  });
 }
 
 async function createNewConversation() {
   try {
     const conv = await api('/conversations', {
       method: 'POST',
-      body: JSON.stringify({ title: `Chat ${new Date().toLocaleTimeString()}` })
+      body: JSON.stringify({ title: `Chat ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` })
     });
     state.currentConversationId = conv.id;
     loadAssistantView();
   } catch (e) {}
 }
 
-async function selectConversation(id) {
+// messageTimings: {conversationId: [duration_s_per_assistant_turn, ...]}
+if (!state.messageTimings) state.messageTimings = {};
+
+async function selectConversation(id, lastTurnDuration) {
   state.currentConversationId = id;
   updateChatInputState();
+
+  const conversations = await api('/conversations').catch(() => []);
+  const currentConvo = conversations.find(c => c.id === id);
+  const titleEl = document.getElementById('chat-active-title');
+  if (titleEl) {
+    titleEl.innerText = currentConvo ? (currentConvo.title || `Chat #${id}`) : 'Conversation';
+  }
+
+  const listContainer = document.getElementById('chat-conversations-list');
+  if (listContainer && conversations.length > 0) {
+    listContainer.innerHTML = conversations.map(c => `
+      <button class="chat-convo-btn ${state.currentConversationId === c.id ? 'active' : ''}" onclick="selectConversation(${c.id})">
+        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">💬 ${escapeHTML(c.title || `Chat #${c.id}`)}</span>
+      </button>
+    `).join('');
+  }
+
   const messages = await api(`/conversations/${id}/messages`);
   const transcript = document.getElementById('chat-messages-transcript');
+  if (!transcript) return;
 
   if (messages.length === 0) {
-    transcript.innerHTML = '<p style="color:var(--text-muted); text-align:center; margin-top:2rem;">Conversation started. Type a message below.</p>';
+    transcript.innerHTML = `
+      <div class="chat-empty-state">
+        <div class="chat-empty-glyph">✦</div>
+        <h3>${escapeHTML(currentConvo ? (currentConvo.title || 'Personal Assistant') : 'Personal Assistant')}</h3>
+        <p>Conversation started. Ask a question, plan your day, or manage your schedule.</p>
+      </div>
+    `;
     return;
   }
 
-  transcript.innerHTML = messages.map(m => {
+  // Persist per-turn timing from the latest send call
+  if (lastTurnDuration != null) {
+    if (!state.messageTimings[id]) state.messageTimings[id] = [];
+    state.messageTimings[id].push(lastTurnDuration);
+  }
+  const timings = state.messageTimings[id] || [];
+  let assistantTurnIdx = 0;
+
+  let hasPendingDestructive = false;
+  let lastToolInfo = null;
+
+  transcript.innerHTML = messages.map((m, idx) => {
     if (m.role === 'user') {
-      return `<div class="chat-bubble chat-bubble-user">${escapeHTML(m.content)}</div>`;
+      return `
+        <div class="chat-turn chat-turn-user">
+          <div class="chat-msg-user">${escapeHTML(m.content)}</div>
+        </div>
+      `;
     } else if (m.role === 'assistant') {
-      let html = `<div class="chat-bubble chat-bubble-assistant">${escapeHTML(m.content || '')}</div>`;
-      if (m.tool_calls) {
-        html += `<div class="chat-bubble chat-bubble-tool">🛠️ Tool Call Request: ${escapeHTML(m.tool_calls)}</div>`;
+      const isFinalTurn = !m.tool_calls;
+      if (isFinalTurn) {
+        const dur = timings[assistantTurnIdx];
+        const timingBadge = dur != null
+          ? `<span class="msg-timing-badge">⏱️ ${dur.toFixed(1)}s</span>`
+          : '';
+        assistantTurnIdx++;
+        return `
+          <div class="chat-turn chat-turn-assistant">
+            <div class="chat-asst-header">
+              <span class="chat-asst-avatar">✦</span>
+              <span>Assistant</span>
+              ${timingBadge}
+            </div>
+            <div class="chat-msg-assistant md-content">${renderMarkdown(m.content || '')}</div>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="chat-turn chat-turn-assistant">
+            <div class="chat-asst-header">
+              <span class="chat-asst-avatar">✦</span>
+              <span>Assistant (Calling Tool)</span>
+            </div>
+            <details class="chat-tool-details">
+              <summary class="chat-tool-summary">🛠️ Tool Call Request</summary>
+              <pre class="chat-tool-content">${escapeHTML(m.tool_calls)}</pre>
+            </details>
+          </div>
+        `;
       }
-      return html;
     } else if (m.role === 'tool') {
-      return `<div class="chat-bubble chat-bubble-tool">⚙️ Tool '${escapeHTML(m.name || 'tool')}' Output: ${escapeHTML(m.content)}</div>`;
+      let contentParsed = null;
+      try {
+        contentParsed = JSON.parse(m.content);
+      } catch (e) {}
+
+      const isPermDenied = contentParsed && contentParsed.success === false &&
+        typeof contentParsed.error === 'string' && contentParsed.error.includes('Permission denied');
+
+      if (isPermDenied && idx >= messages.length - 2) {
+        hasPendingDestructive = true;
+        lastToolInfo = m.name || 'action';
+      }
+
+      return `
+        <div class="chat-turn chat-turn-assistant">
+          <details class="chat-tool-details">
+            <summary class="chat-tool-summary">⚙️ Tool Output: ${escapeHTML(m.name || 'tool')}</summary>
+            <pre class="chat-tool-content">${escapeHTML(m.content)}</pre>
+          </details>
+        </div>
+      `;
     }
     return '';
   }).join('');
 
-  transcript.scrollTop = transcript.scrollHeight;
+  if (hasPendingDestructive) {
+    transcript.innerHTML += `
+      <div class="chat-confirmation-box">
+        <strong style="color:var(--accent-danger); display:block; margin-bottom:0.4rem;">⚠️ Confirmation Required</strong>
+        <p style="font-size:0.88rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+          A destructive action (${escapeHTML(lastToolInfo || 'delete')}) was requested. Explicit user authorization is required to proceed.
+        </p>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-danger btn-sm" onclick="confirmPendingDestructiveAction()">Confirm & Execute</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelPendingDestructiveAction()">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const scrollViewport = document.getElementById('chat-transcript-viewport');
+  if (scrollViewport) {
+    scrollViewport.scrollTop = scrollViewport.scrollHeight;
+  }
 }
 
 function updateChatInputState() {
   const input = document.getElementById('chat-message-input');
   const btn = document.getElementById('chat-send-btn');
   const enabled = state.currentConversationId != null;
-  input.disabled = !enabled;
-  btn.disabled = !enabled;
+  if (input) input.disabled = !enabled;
+  if (btn) btn.disabled = !enabled;
+}
+
+async function confirmPendingDestructiveAction() {
+  await sendChatMessageText('Yes, I confirm and authorize this deletion.', true);
+}
+
+function cancelPendingDestructiveAction() {
+  showToast('Destructive action cancelled', 'info');
+  const boxes = document.querySelectorAll('.chat-confirmation-box');
+  boxes.forEach(b => b.remove());
+}
+
+async function sendChatMessageText(text, authorizeDestructive = false) {
+  if (!state.currentConversationId || !text) return;
+
+  const input = document.getElementById('chat-message-input');
+  const sendBtn = document.getElementById('chat-send-btn');
+
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+    input.disabled = true;
+  }
+  if (sendBtn) sendBtn.disabled = true;
+
+  const transcript = document.getElementById('chat-messages-transcript');
+  if (transcript) {
+    transcript.innerHTML += `
+      <div class="chat-turn chat-turn-user">
+        <div class="chat-msg-user">${escapeHTML(text)}</div>
+      </div>
+    `;
+  }
+
+  // Calculate rolling average
+  let avgText = '';
+  if (!state.responseTimes) state.responseTimes = [];
+  if (state.responseTimes.length > 0) {
+    const avg = (state.responseTimes.reduce((a, b) => a + b, 0) / state.responseTimes.length).toFixed(1);
+    avgText = ` | avg: ${avg}s`;
+  }
+
+  const startTime = Date.now();
+  if (transcript) {
+    transcript.innerHTML += `
+      <div id="chat-typing-indicator" class="chat-turn chat-turn-assistant">
+        <div class="chat-asst-header">
+          <span class="chat-asst-avatar">✦</span>
+          <span>Assistant</span>
+        </div>
+        <div class="typing-indicator-container">
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
+          <span id="chat-typing-timer" class="typing-timer-text">Thinking... 0.0s${avgText}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const scrollViewport = document.getElementById('chat-transcript-viewport');
+  if (scrollViewport) scrollViewport.scrollTop = scrollViewport.scrollHeight;
+
+  const timerInterval = setInterval(() => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const timerEl = document.getElementById('chat-typing-timer');
+    if (timerEl) {
+      timerEl.innerText = `Thinking... ${elapsed}s${avgText}`;
+    }
+  }, 100);
+
+  try {
+    const response = await fetch(`/conversations/${state.currentConversationId}/messages?stream=true`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        role: 'user',
+        content: text,
+        authorize_destructive: authorizeDestructive
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let accumulatedContent = '';
+    let hasStartedStreamingText = false;
+    let streamingBubbleEl = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // retain partial line
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const jsonStr = trimmed.slice(6);
+        let eventData = null;
+        try {
+          eventData = JSON.parse(jsonStr);
+        } catch (e) {
+          continue;
+        }
+
+        if (eventData.event === 'status') {
+          const statusTimerEl = document.getElementById('chat-typing-timer');
+          if (statusTimerEl && eventData.name) {
+            statusTimerEl.innerHTML = `⚙️ <strong>Calling tool:</strong> <code>${escapeHTML(eventData.name)}</code>...`;
+          }
+        } else if (eventData.event === 'delta') {
+          const deltaContent = eventData.content || '';
+          if (deltaContent) {
+            accumulatedContent += deltaContent;
+
+            if (!hasStartedStreamingText) {
+              hasStartedStreamingText = true;
+              const typingIndicator = document.getElementById('chat-typing-indicator');
+              if (typingIndicator) typingIndicator.remove();
+
+              const streamingTurn = document.createElement('div');
+              streamingTurn.id = 'chat-streaming-turn';
+              streamingTurn.className = 'chat-turn chat-turn-assistant';
+              streamingTurn.innerHTML = `
+                <div class="chat-asst-header">
+                  <span class="chat-asst-avatar">✦</span>
+                  <span>Assistant</span>
+                  <span id="chat-live-timing" class="msg-timing-badge" style="opacity:0.8;">⏱️ streaming...</span>
+                </div>
+                <div id="chat-streaming-content" class="chat-msg-assistant md-content"></div>
+              `;
+              transcript.appendChild(streamingTurn);
+              streamingBubbleEl = document.getElementById('chat-streaming-content');
+            }
+
+            if (streamingBubbleEl) {
+              streamingBubbleEl.innerHTML = renderMarkdown(accumulatedContent);
+            }
+            if (scrollViewport) scrollViewport.scrollTop = scrollViewport.scrollHeight;
+          }
+        } else if (eventData.event === 'error') {
+          throw new Error(eventData.error || 'Stream error from assistant');
+        }
+      }
+    }
+
+    const duration = (Date.now() - startTime) / 1000;
+    state.responseTimes.push(duration);
+    if (state.responseTimes.length > 10) state.responseTimes.shift();
+
+    clearInterval(timerInterval);
+    const indicator = document.getElementById('chat-typing-indicator');
+    if (indicator) indicator.remove();
+    const streamingTurn = document.getElementById('chat-streaming-turn');
+    if (streamingTurn) streamingTurn.remove();
+
+    updateChatInputState();
+    await selectConversation(state.currentConversationId, duration);
+
+    // Refresh any active dashboard domain view
+    loadCurrentView();
+  } catch (err) {
+    clearInterval(timerInterval);
+    const indicator = document.getElementById('chat-typing-indicator');
+    if (indicator) indicator.remove();
+    const streamingTurn = document.getElementById('chat-streaming-turn');
+    if (streamingTurn) streamingTurn.remove();
+    updateChatInputState();
+
+    // Re-sync authoritative server state from DB
+    await selectConversation(state.currentConversationId);
+
+    if (transcript) {
+      transcript.innerHTML += `
+        <div class="chat-turn chat-turn-assistant">
+          <div class="chat-asst-header">
+            <span class="chat-asst-avatar">✦</span>
+            <span>Assistant</span>
+          </div>
+          <div class="chat-msg-assistant" style="color:var(--accent-danger);">⚠️ ${escapeHTML(err.message || 'Stream interrupted. Transcript synced with server.')}</div>
+        </div>
+      `;
+    }
+    if (scrollViewport) scrollViewport.scrollTop = scrollViewport.scrollHeight;
+  }
 }
 
 async function handleSendChatMessage(e) {
   e.preventDefault();
-  if (!state.currentConversationId) return;
-
   const input = document.getElementById('chat-message-input');
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
 
-  input.value = '';
-  const transcript = document.getElementById('chat-messages-transcript');
-  transcript.innerHTML += `<div class="chat-bubble chat-bubble-user">${escapeHTML(text)}</div>`;
-  transcript.scrollTop = transcript.scrollHeight;
+  // If user typed confirmation words and there is a visible confirmation box, set authorize_destructive = true
+  const isConfirmWord = /^(yes|confirm|proceed|ok|delete it|do it|sure)\b/i.test(text);
+  const hasConfirmationBox = !!document.querySelector('.chat-confirmation-box');
+  const authorizeDestructive = isConfirmWord && hasConfirmationBox;
 
-  try {
-    await api(`/conversations/${state.currentConversationId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ role: 'user', content: text })
-    });
-    selectConversation(state.currentConversationId);
-  } catch (err) {}
+  await sendChatMessageText(text, authorizeDestructive);
 }
 
 // Memories Management

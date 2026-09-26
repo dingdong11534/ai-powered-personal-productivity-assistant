@@ -72,3 +72,15 @@ class ProjectService:
         project = self.get_project(project_id)
         archived_at = datetime.now(timezone.utc).replace(tzinfo=None)
         return self.repository.update(project, {"archived_at": archived_at})
+
+    def unarchive_project(self, project_id: int) -> Project:
+        """Remove the archived_at timestamp, restoring the project to active."""
+        project = self.get_project(project_id)
+        return self.repository.update(project, {"archived_at": None})
+
+    def delete_project(self, project_id: int) -> None:
+        """Delete a project by id. Tasks referencing this project are untouched;
+        their project_id becomes NULL via ondelete='SET NULL' in the database model.
+        """
+        project = self.get_project(project_id)
+        self.repository.delete(project)

@@ -74,3 +74,7 @@ class PomodoroSessionService:
                 "duration_seconds": duration_seconds,
             },
         )
+
+    def delete_session(self, session_id: int) -> None:
+        session = self.get_session(session_id)
+        self.repository.delete(session)

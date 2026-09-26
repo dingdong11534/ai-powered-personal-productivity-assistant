@@ -88,3 +88,18 @@ def test_list_projects_can_exclude_archived(client):
 
     ids = {p["id"] for p in response.json()}
     assert ids == {active["id"]}
+
+
+def test_unarchive_project_clears_archived_at(client):
+    created = client.post("/projects", json={"name": "Reopening Project"}).json()
+    client.post(f"/projects/{created['id']}/archive")
+
+    # Unarchive
+    response = client.post(f"/projects/{created['id']}/unarchive")
+    assert response.status_code == 200
+    assert response.json()["archived_at"] is None
+
+
+def test_unarchive_missing_project_returns_404(client):
+    response = client.post("/projects/999999/unarchive")
+    assert response.status_code == 404

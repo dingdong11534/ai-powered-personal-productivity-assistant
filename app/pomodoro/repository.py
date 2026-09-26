@@ -44,3 +44,7 @@ class PomodoroSessionRepository:
         self.db.commit()
         self.db.refresh(session)
         return session
+
+    def delete(self, session: PomodoroSession) -> None:
+        self.db.delete(session)
+        self.db.commit()

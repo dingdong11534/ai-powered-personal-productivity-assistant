@@ -14,7 +14,7 @@ a row and most callers listing habits don't need it for every one.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.habits.schemas import (
@@ -65,6 +65,17 @@ def update_habit(
 @router.post("/{habit_id}/archive", response_model=HabitRead)
 def archive_habit(habit_id: int, service: HabitService = Depends(get_habit_service)) -> HabitRead:
     return service.archive_habit(habit_id)
+
+
+@router.post("/{habit_id}/unarchive", response_model=HabitRead)
+def unarchive_habit(habit_id: int, service: HabitService = Depends(get_habit_service)) -> HabitRead:
+    return service.unarchive_habit(habit_id)
+
+
+@router.delete("/{habit_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_habit(habit_id: int, service: HabitService = Depends(get_habit_service)) -> Response:
+    service.delete_habit(habit_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -51,6 +51,10 @@ class HabitRepository:
         self.db.refresh(habit)
         return habit
 
+    def delete(self, habit: Habit) -> None:
+        self.db.delete(habit)
+        self.db.commit()
+
 
 class HabitCompletionRepository:
     def __init__(self, db: Session) -> None:

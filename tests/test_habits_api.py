@@ -143,3 +143,18 @@ def test_habit_statistics_missing_habit_returns_404(client):
     response = client.get("/habits/999999/statistics")
 
     assert response.status_code == 404
+
+
+def test_unarchive_habit_clears_archived_at(client):
+    created = client.post("/habits", json={"name": "Running", "frequency": "daily"}).json()
+    client.post(f"/habits/{created['id']}/archive")
+
+    # Unarchive
+    response = client.post(f"/habits/{created['id']}/unarchive")
+    assert response.status_code == 200
+    assert response.json()["archived_at"] is None
+
+
+def test_unarchive_missing_habit_returns_404(client):
+    response = client.post("/habits/999999/unarchive")
+    assert response.status_code == 404
