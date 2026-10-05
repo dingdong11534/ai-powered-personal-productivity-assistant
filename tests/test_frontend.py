@@ -29,3 +29,15 @@ def test_health_check_remains_functional(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_voice_input_elements_present(client):
+    html_resp = client.get("/")
+    assert html_resp.status_code == 200
+    assert 'id="chat-mic-btn"' in html_resp.text
+    assert 'toggleVoiceInput()' in html_resp.text
+
+    js_resp = client.get("/static/js/app.js")
+    assert js_resp.status_code == 200
+    assert "toggleVoiceInput" in js_resp.text
+    assert "SpeechRecognition" in js_resp.text

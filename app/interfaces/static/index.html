@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Patrick+Hand&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=9">
 </head>
 <body>
 
@@ -390,14 +390,24 @@
             <div class="chat-input-dock">
               <form id="chat-input-form" onsubmit="handleSendChatMessage(event)" class="chat-input-box-container">
                 <textarea id="chat-message-input" rows="1" placeholder="Reply to Assistant or ask 'What should I work on today?'..." required disabled></textarea>
-                <button type="submit" id="chat-send-btn" class="chat-send-action-btn" disabled title="Send message (Enter)">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                  </svg>
-                </button>
+                <div class="chat-input-actions">
+                  <button type="button" id="chat-mic-btn" class="chat-mic-action-btn" onclick="toggleVoiceInput()" disabled title="Voice input (Speech-to-Text)">
+                    <svg class="mic-icon-svg" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                      <line x1="12" y1="19" x2="12" y2="23"></line>
+                      <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                  </button>
+                  <button type="submit" id="chat-send-btn" class="chat-send-action-btn" disabled title="Send message (Enter)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  </button>
+                </div>
               </form>
-              <div class="chat-input-hint">Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for a new line</div>
+              <div class="chat-input-hint" id="chat-input-hint">Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for a new line</div>
             </div>
           </div>
         </div>
@@ -698,7 +708,7 @@
   <!-- Global Toast Notification Container -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/rough.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/rough.js?v=9"></script>
+  <script src="/static/js/app.js?v=9"></script>
 </body>
 </html>

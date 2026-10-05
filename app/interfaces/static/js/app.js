@@ -1475,12 +1475,124 @@ async function selectConversation(id, lastTurnDuration) {
   }
 }
 
+let speechRecognition = null;
+let isVoiceRecording = false;
+
+function initVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    return null;
+  }
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onstart = () => {
+    isVoiceRecording = true;
+    updateVoiceUI(true);
+  };
+
+  recognition.onresult = (event) => {
+    let interimTranscript = '';
+    let finalTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+    const input = document.getElementById('chat-message-input');
+    if (input) {
+      const text = (finalTranscript || interimTranscript).trim();
+      if (text) {
+        input.value = text;
+        input.style.height = 'auto';
+        input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.warn('Speech recognition error:', event.error);
+    isVoiceRecording = false;
+    updateVoiceUI(false);
+    if (event.error === 'not-allowed') {
+      showToast('Microphone permission denied', 'error');
+    } else if (event.error !== 'no-speech') {
+      showToast(`Voice input error: ${event.error}`, 'warning');
+    }
+  };
+
+  recognition.onend = () => {
+    isVoiceRecording = false;
+    updateVoiceUI(false);
+  };
+
+  return recognition;
+}
+
+function updateVoiceUI(recording) {
+  const micBtn = document.getElementById('chat-mic-btn');
+  const hint = document.getElementById('chat-input-hint');
+  if (micBtn) {
+    if (recording) {
+      micBtn.classList.add('recording');
+      micBtn.title = 'Stop listening';
+    } else {
+      micBtn.classList.remove('recording');
+      micBtn.title = 'Voice input (Speech-to-Text)';
+    }
+  }
+  if (hint) {
+    if (recording) {
+      hint.innerHTML = '<span class="voice-recording-hint">🔴 <strong>Listening...</strong> Speak clearly (click mic again to stop)</span>';
+    } else {
+      hint.innerHTML = 'Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for a new line';
+    }
+  }
+}
+
+function toggleVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast('Voice input is not supported in this browser. Please use Chrome or Edge.', 'warning');
+    return;
+  }
+
+  if (isVoiceRecording && speechRecognition) {
+    try { speechRecognition.stop(); } catch (e) {}
+    isVoiceRecording = false;
+    updateVoiceUI(false);
+    return;
+  }
+
+  if (!speechRecognition) {
+    speechRecognition = initVoiceInput();
+  }
+
+  if (speechRecognition) {
+    try {
+      speechRecognition.start();
+    } catch (e) {
+      console.warn('Restarting speech recognition instance:', e);
+      speechRecognition = initVoiceInput();
+      try { speechRecognition.start(); } catch (err) {
+        showToast('Could not start microphone', 'error');
+      }
+    }
+  }
+}
+
 function updateChatInputState() {
   const input = document.getElementById('chat-message-input');
   const btn = document.getElementById('chat-send-btn');
+  const micBtn = document.getElementById('chat-mic-btn');
   const enabled = state.currentConversationId != null;
   if (input) input.disabled = !enabled;
   if (btn) btn.disabled = !enabled;
+  if (micBtn) micBtn.disabled = !enabled;
 }
 
 async function confirmPendingDestructiveAction() {
@@ -1496,8 +1608,15 @@ function cancelPendingDestructiveAction() {
 async function sendChatMessageText(text, authorizeDestructive = false) {
   if (!state.currentConversationId || !text) return;
 
+  if (isVoiceRecording && speechRecognition) {
+    try { speechRecognition.stop(); } catch (e) {}
+    isVoiceRecording = false;
+    updateVoiceUI(false);
+  }
+
   const input = document.getElementById('chat-message-input');
   const sendBtn = document.getElementById('chat-send-btn');
+  const micBtn = document.getElementById('chat-mic-btn');
 
   if (input) {
     input.value = '';
@@ -1505,6 +1624,7 @@ async function sendChatMessageText(text, authorizeDestructive = false) {
     input.disabled = true;
   }
   if (sendBtn) sendBtn.disabled = true;
+  if (micBtn) micBtn.disabled = true;
 
   const transcript = document.getElementById('chat-messages-transcript');
   if (transcript) {
