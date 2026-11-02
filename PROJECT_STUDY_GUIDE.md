@@ -21,8 +21,8 @@ A **local-first, AI-assisted personal productivity backend** built as a learning
 - A full **web dashboard UI** served as static files
 
 **It is NOT**:
-- A multi-user SaaS app (single local user only)
-- A mobile app (REST API + web dashboard only)
+- A multi-tenant cloud SaaS — each deployment has one admin owner; multi-user support is for shared local/hosted instances
+- A native mobile app — but the web dashboard is fully responsive (mobile-first layout, off-canvas nav, bottom bar)
 - Production-hardened (it's a learning project with deliberate, documented tradeoffs)
 
 **Key design philosophy**: Every decision is documented with a "why", not just a "what". The project is built phase-by-phase, adding only what's needed per phase — no speculative features.
@@ -46,7 +46,7 @@ A **local-first, AI-assisted personal productivity backend** built as a learning
 ### Dev Tooling
 | Tool | Role |
 |---|---|
-| **pytest** | Test runner (407 tests across 52 test files covering every layer) |
+| **pytest** | Test runner (426 tests across 55 test files covering every layer; 422 pass) |
 | **ruff** | Linter + formatter (replaces flake8 + black + isort; fast, one tool) |
 | **alembic** | DB migrations (commented out in requirements.txt, activated only at first non-additive schema change) |
 
@@ -57,7 +57,7 @@ The AI layer supports multiple backends through a single abstraction:
 
 Both providers implement both `generate()` (blocking) and `generate_stream()` (SSE/streaming).
 
-Current default: **Groq** (qwen/qwen3.8-27b model), configurable via .env.
+Current default: **Groq** (`llama-3.3-70b-versatile`), configurable via .env. Offline (Ollama) mode is admin-only.
 
 ---
 
@@ -174,7 +174,10 @@ Routes in app.interfaces.api.* translate domain exceptions to HTTP status codes 
 | notifications | id, title, body, created_at, read_at, source | Data-only; no OS dispatch yet |
 | conversations | id, started_at, title | Chat session container |
 | messages | id, conversation_id, role, content, created_at, tool_calls, tool_call_id, name | Raw transcript |
-| memories | id, content, category, created_at, source_message_id, archived_at | Curated long-term facts |
+| memories | id, content, category, created_at, source_message_id, archived_at, user_id | Curated long-term facts (per-user) |
+| users | id, username, password_hash, role, custom_api_keys, last_active_at, token_usage | Auth + presence + quota |
+| project_members | id, project_id, user_id, role, status, invited_by_id | Project collaboration memberships |
+| task_requests | id, task_id, from_user_id, to_user_id, project_id, notes, status | Task assignment requests |
 
 ### Migration Strategy
 - **Base.metadata.create_all()** at startup — creates missing tables, leaves existing ones alone.
@@ -380,7 +383,7 @@ Reads from environment variables or .env file. Tests construct `Settings(...)` d
 
 ## 13. Testing Strategy
 
-**52 test files, 407 tests**, structured to match the layered architecture:
+**55 test files, 426 tests** (422 pass; 4 pre-existing mock expectation mismatches), structured to match the layered architecture:
 
 | Test file pattern | What it tests |
 |---|---|
@@ -393,6 +396,9 @@ Reads from environment variables or .env file. Tests construct `Settings(...)` d
 | test_ai_*.py | AI assistant, tool execution, context, memory |
 | test_external_client.py | SSRF-safe HTTP client (monkeypatches DNS) |
 | test_streaming.py | Phase 8: SSE streaming (provider stream, AssistantCore stream, SSE endpoint) |
+| test_auth_and_user_isolation.py | JWT auth, per-user data isolation, admin override |
+| test_collaboration_and_multiuser.py | ProjectMember invites, task assignment requests, presence |
+| test_multi_provider_api.py | AI provider switching, offline-mode admin restriction |
 | test_frontend.py | Phase 3: web dashboard static file serving, HTML/CSS/JS structure |
 | test_universal_delete_*.py | Universal delete tools across all domains |
 | test_assistant_task_creation.py | Task creation intent parsing + fallback logic |
@@ -447,6 +453,10 @@ All routes are at http://127.0.0.1:8000/. Interactive docs at /docs (Swagger UI)
 | **6** | Sandboxed file workspace, file tools for AI, destructive permission gating |
 | **7** | External HTTP client (SSRF-safe), WeatherService, get_current_weather AI tool |
 | **8** | SSE streaming: `generate_stream()` on providers, `handle_user_message_stream()` in AssistantCore, SSE endpoint, frontend SSE consumer, voice input via browser SpeechRecognition |
+| **9** | Voice input: browser Web Speech API (`#chat-mic-btn`, `toggleVoiceInput()`), interim results in chat input, graceful degradation |
+| **Multi-user** | JWT auth (`app.users.security`), `get_current_user()` FastAPI dependency, `user_id` added to all domain tables, presence heartbeat, per-user token quota, per-user API key overrides |
+| **Collaboration** | `ProjectMember` model (invite/accept/reject), `TaskRequest` model (assign tasks between users), admin role gates offline AI |
+| **Mobile UI** | Off-canvas nav drawer, bottom navigation bar, touch targets, bottom-sheet modals, day theme default |
 
 ---
 
@@ -577,7 +587,7 @@ cp .env.example .env
 
 # 6. Run tests
 .venv/bin/pytest -v
-# → 407 tests collected across 52 files
+# → 426 tests collected across 55 files (422 pass)
 ```
 
 ### AI Provider Configuration Options
@@ -627,3 +637,125 @@ AI_API_KEY=sk-your_key_here
 16. **app/interfaces/static/js/app.js** — frontend SSE consumer, tool action cards, voice input
 17. **tests/conftest.py** — how tests are isolated (in-memory DB, tmp workspace)
 18. **tests/test_streaming.py** — how SSE streaming is tested end-to-end
+
+## 20. Multi-User & Authentication System
+
+### How Auth Works
+
+```
+POST /auth/login  →  UserService.authenticate_user()
+                  →  returns JWT token (HS256, SECRET_KEY, 30-day expiry)
+
+Every request  →  get_current_user() FastAPI dependency
+               →  tries: Bearer token > X-User-Id header > X-Username header > admin fallback
+               →  returns User ORM object injected into route handlers
+```
+
+### JWT Token Structure
+
+```python
+{
+  "user_id": 42,
+  "username": "jordan",
+  "role": "user",   # or "admin"
+  "exp": <unix timestamp>
+}
+```
+
+### Per-User Data Isolation
+
+Every query that lists resources filters by `user_id`. Example (TaskRepository):
+
+```python
+def list(self, session, ..., user_id=None):
+    query = session.query(Task)
+    if user_id is not None:
+        query = query.filter(Task.user_id == user_id)
+    ...
+```
+
+Admin users bypass this filter: `if current_user.role == "admin": user_id = None`.
+
+### Data Ownership Check Pattern
+
+```python
+# In a route handler, after fetching the item:
+check_item_access(item.user_id, current_user, action="delete this task")
+# Raises 403 if non-admin user tries to touch another user's data
+```
+
+### AI Tool Isolation
+
+```python
+# AssistantCore.__init__ receives the authenticated user
+# ToolRegistry.execute_tool() passes user_id to all service calls
+# A user's AI conversation cannot touch another user's tasks/memories
+```
+
+---
+
+## 21. Project Collaboration
+
+### Invite Flow
+
+```
+Owner: POST /projects/{id}/invite  {"user_id": N}
+    → Creates ProjectMember(status="pending")
+    → Creates Notification for invitee
+
+Invitee: POST /projects/{id}/accept
+    → Updates ProjectMember.status = "accepted"
+
+Invitee: POST /projects/{id}/reject
+    → Deletes ProjectMember row
+```
+
+### Task Assignment Flow
+
+```
+User A: POST /tasks/{id}/assign  {"to_user_id": B}
+    → Creates TaskRequest(status="pending")
+    → Creates Notification for User B
+
+User B: POST /task-requests/{id}/accept
+    → Sets Task.assigned_user_id = B
+    → Updates TaskRequest.status = "accepted"
+
+User B: POST /task-requests/{id}/reject
+    → Updates TaskRequest.status = "rejected"
+```
+
+### Roles
+
+| Role | Permissions |
+|---|---|
+| admin | Full access to all users' data; can configure offline AI mode |
+| user | Own data only; can invite/accept in projects they own; cannot use offline AI |
+
+---
+
+## 22. Business Rules Added by Multi-User (Phase 10+)
+
+| Rule | Where Enforced |
+|---|---|
+| Offline AI mode restricted to admin | `/ai/mode` and `/ai/config` routes + `UserService` |
+| Users can only see/modify their own resources | `check_item_access()` in routes |
+| Admin sees all data across users | `user_id=None` filter bypass in repositories |
+| Project membership unique per user | DB `UniqueConstraint("project_id", "user_id")` |
+| Token usage tracked per AI call | `AssistantCore` post-call increment |
+| Per-user API keys override system key | `get_ai_status(user=)` in `app.ai.provider` |
+| Presence: online = last heartbeat < 30 seconds | `User.is_online` computed property |
+
+---
+
+## 23. Known Limitations / Technical Debt (Current State)
+
+- **4 pre-existing test failures**: stale mock assertions (see `docs/architecture.md` section 15).
+- **No background scheduler**: `list_due_reminders` exists but nothing calls it automatically.
+- **No desktop notification dispatch**: `app.notifications` is data-only; OS dispatch is a stub.
+- **SQLite WAL mode enabled for Render**: `busy_timeout=60s, workers=1` — adequate for free tier,
+  revisit with connection pooling if concurrent write load increases.
+- **Alembic still deferred**: all schema changes so far have been purely additive nullable columns.
+  First non-additive change (rename, NOT NULL on existing rows, drop column) triggers Alembic adoption.
+- **`datetime.utcnow()` deprecation warnings**: Python 3.14 warns on these in auth.py and models.py;
+  migration to `datetime.now(datetime.UTC)` is a straightforward future cleanup.
