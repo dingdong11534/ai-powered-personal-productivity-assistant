@@ -11,8 +11,8 @@ __pycache__/
 venv/
 
 # Local data (DB file, assistant workspace contents)
-data/*.db
-data/*.sqlite3
+data/*.db*
+data/*.sqlite*
 data/workspace/
 *.log
 
