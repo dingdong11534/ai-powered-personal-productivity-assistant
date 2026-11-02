@@ -82,21 +82,32 @@ class Base(DeclarativeBase):
 def build_engine(database_url: str) -> Engine:
     """Construct a SQLAlchemy engine for `database_url`.
 
-    Pulled out as its own function (rather than inlined below) so tests
-    and any future multi-database setup can build an equivalently
-    configured engine without duplicating the SQLite-specific connect_args
-    logic.
-
     Supports both SQLite (local/dev) and PostgreSQL (Render / production).
     PostgreSQL URLs starting with "postgres://" are normalised to
     "postgresql://" for SQLAlchemy 2.x compatibility.
     """
-    # Render's DATABASE_URL uses the older "postgres://" scheme;
-    # SQLAlchemy 2.x only accepts "postgresql://".
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-    return create_engine(database_url, connect_args=connect_args)
+    if database_url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False, "timeout": 60}
+    else:
+        connect_args = {}
+    
+    eng = create_engine(database_url, connect_args=connect_args)
+    if database_url.startswith("sqlite") and ":memory:" not in database_url:
+        from sqlalchemy import event
+
+        @event.listens_for(eng, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            try:
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=60000")
+                cursor.close()
+            except Exception:
+                pass
+
+    return eng
 
 
 _settings = get_settings()
@@ -124,29 +135,25 @@ def get_db() -> Generator[Session, None, None]:
 def create_all_tables(bind: Engine | None = None) -> None:
     """Create every table registered on Base.metadata (idempotent — safe
     to call on an already-initialized database; existing tables are left
-    alone), then apply additive schema patches and seed data.
-
-    Imports app.storage.models locally, not at module top-level: models
-    must be imported *somewhere* before create_all() runs so they've
-    registered themselves on Base.metadata, but database.py importing
-    models.py (which imports Base from database.py) at module load time
-    would be a circular import. Deferring the import to inside this
-    function breaks that cycle.
-
-    Both SQLite and PostgreSQL are supported:
-    - SQLite: additive PRAGMA-based column patches keep backwards compat.
-    - PostgreSQL: `create_all` is idempotent; the helper skips PRAGMA
-      calls and uses information_schema instead.
-    """
+    alone), then apply additive schema patches and seed data."""
     from app.storage import models  # noqa: F401
 
     target = bind or engine
     Base.metadata.create_all(bind=target)
     url_str = str(target.url)
     if url_str.startswith("sqlite"):
-        _ensure_task_project_id_column(target)
-        _ensure_pomodoro_session_name_column(target)
-    _ensure_user_schema_and_admin(target)
+        try:
+            _ensure_task_project_id_column(target)
+        except Exception:
+            pass
+        try:
+            _ensure_pomodoro_session_name_column(target)
+        except Exception:
+            pass
+    try:
+        _ensure_user_schema_and_admin(target)
+    except Exception:
+        pass
 
 
 def _table_exists(conn, table_name: str, dialect: str = "sqlite") -> bool:

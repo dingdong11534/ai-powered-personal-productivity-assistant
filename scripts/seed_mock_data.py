@@ -15,7 +15,6 @@ from app.storage.models import Habit, HabitFrequency, Reminder, ScheduleItem, Us
 
 
 def seed_mock_data() -> None:
-    create_all_tables()
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc).replace(tzinfo=None)

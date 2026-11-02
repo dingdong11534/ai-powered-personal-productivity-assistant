@@ -26,7 +26,7 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: gunicorn app.interfaces.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    startCommand: gunicorn app.interfaces.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     healthCheckPath: /health
     autoDeploy: true     # Re-deploy automatically on every git push to the main branch
 
