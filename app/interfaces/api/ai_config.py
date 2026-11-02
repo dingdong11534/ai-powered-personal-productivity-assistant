@@ -1,7 +1,7 @@
 """FastAPI router for AI mode configuration and status."""
 
 from typing import Any
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -105,14 +105,30 @@ def set_user_key(
 
 
 @router.post("/mode", response_model=dict[str, Any])
-def update_mode(data: AIModeUpdateRequest) -> dict[str, Any]:
-    """Switch active AI mode between online (cloud API) and offline (local Ollama)."""
+def update_mode(
+    data: AIModeUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Switch active AI mode between online (cloud API) and offline (local Ollama). Admin only for offline."""
+    if data.mode == "offline" and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can switch to or configure the offline model.",
+        )
     return set_current_ai_mode(data.mode)
 
 
 @router.post("/config", response_model=dict[str, Any])
-def update_configuration(data: AIConfigUpdateRequest) -> dict[str, Any]:
-    """Configure and activate an AI provider (e.g. OpenAI, Gemini, Groq, Grok, or Offline)."""
+def update_configuration(
+    data: AIConfigUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Configure and activate an AI provider (e.g. OpenAI, Gemini, Groq, Grok, or Offline). Admin only for offline."""
+    if data.provider.lower() in ("offline", "ollama") and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can switch to or configure the offline model.",
+        )
     return set_ai_configuration(
         provider=data.provider,
         model=data.model,

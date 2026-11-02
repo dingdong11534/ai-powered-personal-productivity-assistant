@@ -1112,6 +1112,10 @@ def get_ai_provider(
     if active == "mock":
         return MockAIProvider()
 
+    # Admin-only check: offline model is restricted to administrators
+    if active == "offline" and user is not None and getattr(user, "role", "user") != "admin":
+        active = normalize_provider_name(s.online_ai_provider or "openai")
+
     cfg = get_provider_config(active, s, user=user)
     is_local = active in ("offline", "ollama") or cfg.get("is_local", False)
     api_key = cfg.get("api_key")

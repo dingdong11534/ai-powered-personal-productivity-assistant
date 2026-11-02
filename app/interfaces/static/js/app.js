@@ -154,8 +154,23 @@ async function loadAISettings() {
     const select = document.getElementById('setting-ai-provider');
     if (!select) return;
 
+    const isAdmin = state.currentUser && state.currentUser.role === 'admin';
+    const offlineOpt = select.querySelector('option[value="offline"]');
+    if (offlineOpt) {
+      if (!isAdmin) {
+        offlineOpt.disabled = true;
+        offlineOpt.textContent = 'Offline (Ollama - Local LLM) [Admin Only]';
+      } else {
+        offlineOpt.disabled = false;
+        offlineOpt.textContent = 'Offline (Ollama - Local LLM)';
+      }
+    }
+
     let activeKey = status.active_provider || 'groq';
     if (activeKey === 'ollama') activeKey = 'offline';
+    if (!isAdmin && activeKey === 'offline') {
+      activeKey = status.online_provider || 'openai';
+    }
 
     if (select.querySelector(`option[value="${activeKey}"]`)) {
       select.value = activeKey;
@@ -330,6 +345,11 @@ async function saveAISettings() {
   const providerSelect = document.getElementById('setting-ai-provider');
   if (!providerSelect) return;
   const provider = providerSelect.value;
+
+  if (provider === 'offline' && state.currentUser && state.currentUser.role !== 'admin') {
+    showToast('Only administrators can activate the offline model.', 'error');
+    return;
+  }
 
   const customInput = document.getElementById('setting-ai-model-custom');
   const presetSelect = document.getElementById('setting-ai-model-preset');
@@ -874,13 +894,13 @@ const Sketch = {
   },
 
   getTheme() {
-    return document.documentElement.getAttribute('data-theme') || 'dark';
+    return document.documentElement.getAttribute('data-theme') || 'light';
   }
 };
 
 // Theme Handling (Paper / Chalkboard)
 function initTheme() {
-  const theme = localStorage.getItem('theme') || 'dark';
+  const theme = localStorage.getItem('theme') || 'light';
   document.documentElement.setAttribute('data-theme', theme);
   const select = document.getElementById('setting-theme-select');
   if (select) select.value = theme;
@@ -2136,7 +2156,7 @@ function loadSettingsView() {
   }
   const themeSelect = document.getElementById('setting-theme-select');
   if (themeSelect) {
-    themeSelect.value = localStorage.getItem('theme') || 'dark';
+    themeSelect.value = localStorage.getItem('theme') || 'light';
   }
   loadAISettings();
 }

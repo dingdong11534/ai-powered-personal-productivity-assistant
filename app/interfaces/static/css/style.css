@@ -2329,13 +2329,23 @@ input[type="checkbox"]:checked::after {
     font-size: 0.8rem;
   }
 
-  /* 4. Content Area adjustments */
-  .content-area {
-    padding: 1rem 0.75rem calc(68px + env(safe-area-inset-bottom, 0px)) 0.75rem !important;
-    overflow-x: hidden;
+  /* 4. Content Area adjustments with generous bottom clearance */
+  .main-wrapper {
+    height: 100dvh !important;
+    min-height: -webkit-fill-available;
   }
 
-  /* 5. Responsive Grids & Cards */
+  .content-area {
+    padding: 0.85rem 0.85rem calc(115px + env(safe-area-inset-bottom, 20px)) 0.85rem !important;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .view-section {
+    padding-bottom: 2rem !important;
+  }
+
+  /* 5. Clean, Organized Grids & Cards */
   .stats-grid,
   .grid-2col,
   .projects-grid {
@@ -2347,10 +2357,11 @@ input[type="checkbox"]:checked::after {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+    margin-bottom: 1rem;
   }
 
   .page-header h2 {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
 
   .page-header .btn {
@@ -2362,6 +2373,7 @@ input[type="checkbox"]:checked::after {
     flex-direction: column;
     align-items: stretch;
     gap: 0.5rem;
+    margin-bottom: 1rem;
   }
 
   .filter-group {
@@ -2373,11 +2385,21 @@ input[type="checkbox"]:checked::after {
     flex: 1;
   }
 
+  .item-list,
+  #notifications-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-bottom: 2.5rem !important;
+  }
+
   .item-card {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.65rem;
-    padding: 0.85rem 0.95rem;
+    padding: 0.9rem 1rem;
+    border-radius: var(--sketch-radius-md, 10px);
+    box-shadow: 2px 2px 0px var(--border-color);
   }
 
   .item-main {
@@ -2387,28 +2409,32 @@ input[type="checkbox"]:checked::after {
   .item-actions {
     width: 100%;
     justify-content: flex-end;
-    gap: 0.4rem;
+    gap: 0.45rem;
+    border-top: 1px dashed var(--border-subtle);
+    padding-top: 0.5rem;
   }
 
-  /* 6. Mobile Modals (Bottom-Sheet Experience) */
+  /* 6. Mobile Modals (Native Bottom-Sheet Experience) */
   .modal-container {
-    padding: 0.5rem !important;
+    padding: 0 !important;
     align-items: flex-end !important;
   }
 
   .modal-content {
     width: 100% !important;
     max-width: 100% !important;
-    max-height: 88vh;
-    border-radius: var(--sketch-radius-md) var(--sketch-radius-md) 0 0 !important;
-    padding: 1.25rem 1rem !important;
+    max-height: 86vh;
+    border-radius: 18px 18px 0 0 !important;
+    padding: 1.25rem 1.15rem calc(1.25rem + env(safe-area-inset-bottom, 16px)) !important;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.4);
   }
 
   .modal-footer {
     flex-direction: column-reverse;
     gap: 0.5rem;
+    padding-top: 0.85rem;
   }
 
   .modal-footer .btn {
@@ -2416,32 +2442,82 @@ input[type="checkbox"]:checked::after {
     justify-content: center;
   }
 
-  /* 7. Mobile Chat Interface */
+  /* 7. Mobile Chat Interface with Horizontal Scrollable Chat Bar */
   .chat-wrapper-layout {
     flex-direction: column !important;
-    height: calc(100vh - 56px - 60px) !important;
+    height: calc(100vh - 56px - 65px - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(100dvh - 56px - 65px - env(safe-area-inset-bottom, 0px)) !important;
   }
 
   .chat-convos-sidebar {
     width: 100% !important;
-    max-height: 120px !important;
+    max-height: none !important;
     border-right: none !important;
     border-bottom: var(--sketch-border-w) solid var(--border-color) !important;
-    flex-shrink: 0;
+    padding: 0.55rem 0.75rem 0.4rem !important;
+    flex-shrink: 0 !important;
+    background: var(--bg-secondary) !important;
   }
 
+  .chat-convos-header {
+    margin-bottom: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  .chat-convos-title {
+    font-size: 0.98rem !important;
+  }
+
+  /* Smooth horizontal swipeable chats track */
   .chat-convos-list {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    gap: 0.4rem;
-    padding: 0.4rem;
-    -webkit-overflow-scrolling: touch;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 0.5rem !important;
+    padding: 0.25rem 0.15rem 0.55rem !important;
+    scrollbar-width: thin !important;
+    touch-action: pan-x !important;
   }
 
-  .chat-convo-item {
-    min-width: 150px;
-    white-space: nowrap;
+  .chat-convos-list::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .chat-convos-list::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
+
+  .chat-convo-btn {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 135px !important;
+    max-width: 220px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 0.4rem 0.8rem !important;
+    border-radius: 9999px !important;
+    border: 1.5px solid var(--border-color) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    font-size: 0.82rem !important;
+    box-shadow: 1px 1px 0px var(--border-color) !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+  }
+
+  .chat-convo-btn.active {
+    background: var(--accent-primary-bg) !important;
+    border-color: var(--accent-primary) !important;
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    box-shadow: 2px 2px 0px var(--border-color) !important;
   }
 
   .chat-stage {
@@ -2455,11 +2531,11 @@ input[type="checkbox"]:checked::after {
   }
 
   .chat-input-dock {
-    padding: 0.4rem 0.6rem;
+    padding: 0.45rem 0.65rem calc(0.45rem + env(safe-area-inset-bottom, 0px)) 0.65rem !important;
   }
 
   .chat-input-box-container {
-    padding: 0.4rem 0.6rem;
+    padding: 0.4rem 0.65rem;
   }
 
   /* 8. Touch Form Controls & iOS Font-Size Fix */
@@ -2472,18 +2548,19 @@ input[type="checkbox"]:checked::after {
 
   button,
   .btn {
-    min-height: 42px;
+    min-height: 40px;
     touch-action: manipulation;
   }
 
   .btn-sm {
-    min-height: 34px;
+    min-height: 32px;
   }
 
   /* 9. Floating Pomodoro Widget on Mobile */
   .floating-pomo-widget {
-    bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(75px + env(safe-area-inset-bottom, 16px)) !important;
     right: 12px !important;
   }
 }
+
 
