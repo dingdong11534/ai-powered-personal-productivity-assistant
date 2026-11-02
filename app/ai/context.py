@@ -17,7 +17,13 @@ from app.tasks.service import TaskService
 class ContextBuilder:
     """Deliberately selects relevant structured information for the AI prompt."""
 
-    def build_context(self, session: Session, query: str | None = None, is_local: bool = False) -> dict[str, Any]:
+    def build_context(
+        self,
+        session: Session,
+        query: str | None = None,
+        is_local: bool = False,
+        user_id: int | None = None,
+    ) -> dict[str, Any]:
         task_svc = TaskService(session)
         habit_svc = HabitService(session)
         sched_svc = ScheduleService(session)
@@ -28,25 +34,25 @@ class ContextBuilder:
         limit_count = 5 if is_local else 10
 
         # Recent tasks (newest first, so index 0 is always the most recent task)
-        all_recent = task_svc.list_tasks(limit=limit_count)
+        all_recent = task_svc.list_tasks(limit=limit_count, user_id=user_id)
 
         # High priority pending tasks (1=Critical, 2=High)
-        high_priority = task_svc.list_tasks(completed=False)
+        high_priority = task_svc.list_tasks(completed=False, user_id=user_id)
         high_priority = [t for t in high_priority if t.priority in (1, 2)][:limit_count]
 
         # Upcoming deadlines
-        deadlines = [t for t in task_svc.list_tasks(completed=False) if t.deadline is not None]
+        deadlines = [t for t in task_svc.list_tasks(completed=False, user_id=user_id) if t.deadline is not None]
         deadlines.sort(key=lambda t: t.deadline)
         deadlines = deadlines[:limit_count]
 
         # Active projects
-        projects = project_svc.list_projects(include_archived=False)[:limit_count]
+        projects = project_svc.list_projects(include_archived=False, user_id=user_id)[:limit_count]
 
         # Upcoming reminders
-        reminders = reminder_svc.list_upcoming_reminders()[:limit_count]
+        reminders = reminder_svc.list_upcoming_reminders(user_id=user_id)[:limit_count]
 
         # Active habits
-        habits = habit_svc.list_habits(include_archived=False)[:limit_count]
+        habits = habit_svc.list_habits(include_archived=False, user_id=user_id)[:limit_count]
         habit_summary = []
         for h in habits:
             stats = habit_svc.get_statistics(h.id)
@@ -59,11 +65,11 @@ class ContextBuilder:
             })
 
         # Today's schedule
-        schedule_items = sched_svc.list_schedule_items()[:limit_count]
+        schedule_items = sched_svc.list_schedule_items(user_id=user_id)[:limit_count]
 
         # Relevant memories
         mem_limit = 2 if is_local else 5
-        relevant_mems = memory_svc.retrieve_relevant_memories(query=query, limit=mem_limit)
+        relevant_mems = memory_svc.retrieve_relevant_memories(query=query, limit=mem_limit, user_id=user_id)
 
         return {
             "recent_tasks": [_to_dict(t) for t in all_recent],
@@ -76,8 +82,14 @@ class ContextBuilder:
             "relevant_memories": [_to_dict(m) for m in relevant_mems],
         }
 
-    def format_context_prompt(self, session: Session, query: str | None = None, is_local: bool = False) -> str:
-        ctx = self.build_context(session, query=query, is_local=is_local)
+    def format_context_prompt(
+        self,
+        session: Session,
+        query: str | None = None,
+        is_local: bool = False,
+        user_id: int | None = None,
+    ) -> str:
+        ctx = self.build_context(session, query=query, is_local=is_local, user_id=user_id)
         lines = ["=== CURRENT SYSTEM CONTEXT ==="]
 
         lines.append("\n-- Recent Tasks (Newest First) --")
@@ -139,7 +151,7 @@ class ContextBuilder:
             lines.append("No relevant memories stored.")
 
         # Compact historical chat context (Token-efficient)
-        chat_summaries = self.get_recent_conversations_summary(session, limit=2 if is_local else 3)
+        chat_summaries = self.get_recent_conversations_summary(session, limit=2 if is_local else 3, user_id=user_id)
         if chat_summaries:
             lines.append("\n-- Recent Past Chats (Historical Context) --")
             for cs in chat_summaries:
@@ -148,12 +160,14 @@ class ContextBuilder:
 
         return "\n".join(lines)
 
-    def get_recent_conversations_summary(self, session: Session, limit: int = 3) -> list[dict[str, Any]]:
+    def get_recent_conversations_summary(
+        self, session: Session, limit: int = 3, user_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """Retrieve a token-efficient summary of recent conversation turns across past sessions."""
         try:
             from app.conversations.service import ConversationService
             conv_svc = ConversationService(session)
-            convs = conv_svc.list_conversations(limit=limit)
+            convs = conv_svc.list_conversations(limit=limit, user_id=user_id)
             summaries: list[dict[str, Any]] = []
             for c in convs:
                 msgs = conv_svc.get_messages(c.id)

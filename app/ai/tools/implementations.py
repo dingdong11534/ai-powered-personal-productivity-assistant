@@ -85,18 +85,19 @@ class CreateTaskTool(BaseTool):
             except Exception:
                 priority = 2
 
+        task_user_id = args.get("user_id") or 1
         proj_id = args.get("project_id")
         if not proj_id and (args.get("project_name") or args.get("project")):
             p_name = str(args.get("project_name") or args.get("project")).lower()
             p_svc = ProjectService(session)
-            for p in p_svc.list_projects():
+            for p in p_svc.list_projects(user_id=task_user_id):
                 if p_name in p.name.lower():
                     proj_id = p.id
                     break
         elif isinstance(proj_id, str) and not proj_id.isdigit():
             p_name = proj_id.lower()
             p_svc = ProjectService(session)
-            for p in p_svc.list_projects():
+            for p in p_svc.list_projects(user_id=task_user_id):
                 if p_name in p.name.lower():
                     proj_id = p.id
                     break
@@ -114,7 +115,6 @@ class CreateTaskTool(BaseTool):
             project_id=proj_id,
             deadline=dl,
         )
-        task_user_id = args.get("user_id") or 1
         task = svc.create_task(t_data, user_id=task_user_id)
         record_activity(session, f"Task created: {task.title}", body=task.description, source="task", user_id=task_user_id)
         return _to_dict(task)
@@ -139,16 +139,17 @@ class UpdateTaskTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
+        user_id = args.get("user_id")
         task_id = args.get("task_id") or args.get("id")
         if not task_id and (args.get("task_title") or args.get("title")):
             t_title = str(args.get("task_title") or args.get("title")).lower()
-            for t in svc.list_tasks():
+            for t in svc.list_tasks(user_id=user_id):
                 if t_title in t.title.lower():
                     task_id = t.id
                     break
         elif isinstance(task_id, str) and not task_id.isdigit():
             t_title = task_id.lower()
-            for t in svc.list_tasks():
+            for t in svc.list_tasks(user_id=user_id):
                 if t_title in t.title.lower():
                     task_id = t.id
                     break
@@ -165,7 +166,7 @@ class UpdateTaskTool(BaseTool):
                 update_kwargs["project_id"] = None
             else:
                 p_svc = ProjectService(session)
-                for p in p_svc.list_projects():
+                for p in p_svc.list_projects(user_id=user_id):
                     if p_name in p.name.lower():
                         update_kwargs["project_id"] = p.id
                         break
@@ -177,13 +178,13 @@ class UpdateTaskTool(BaseTool):
                     update_kwargs["project_id"] = None
                 else:
                     p_svc = ProjectService(session)
-                    for p in p_svc.list_projects():
+                    for p in p_svc.list_projects(user_id=user_id):
                         if p_name in p.name.lower():
                             update_kwargs["project_id"] = p.id
                             break
         t_data = TaskUpdate(**update_kwargs)
         task = svc.update_task(task_id, t_data)
-        record_activity(session, f"Task updated: {task.title}", source="task")
+        record_activity(session, f"Task updated: {task.title}", source="task", user_id=user_id or task.user_id)
         return _to_dict(task)
 
 
@@ -208,6 +209,7 @@ class ListTasksTool(BaseTool):
             priority=args.get("priority"),
             project_id=args.get("project_id"),
             completed=args.get("completed"),
+            user_id=args.get("user_id"),
         )
         return {"tasks": [_to_dict(t) for t in tasks]}
 
@@ -226,7 +228,7 @@ class SearchTasksTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
-        tasks = svc.list_tasks(search=args["query"])
+        tasks = svc.list_tasks(search=args["query"], user_id=args.get("user_id"))
         return {"tasks": [_to_dict(t) for t in tasks]}
 
 
@@ -245,16 +247,17 @@ class CompleteTaskTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
         raw_id = args.get("task_id") or args.get("id")
+        user_id = args.get("user_id")
         if not raw_id:
             title = args.get("title") or args.get("task_name")
             if title:
-                matches = svc.list_tasks(search=str(title))
+                matches = svc.list_tasks(search=str(title), user_id=user_id)
                 if matches:
                     raw_id = matches[0].id
         if not raw_id:
             raise ValueError("Task ID is required for complete_task")
         task = svc.update_task(int(raw_id), TaskUpdate(status="done"))
-        record_activity(session, f"Task completed: {task.title}", source="task")
+        record_activity(session, f"Task completed: {task.title}", source="task", user_id=user_id or task.user_id)
         return _to_dict(task)
 
 
@@ -273,11 +276,12 @@ class DeleteTaskTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
         raw_id = args.get("task_id") or args.get("id")
+        user_id = args.get("user_id")
         if raw_id is None:
             # Fallback: title lookup if model passed title
             title = args.get("title") or args.get("task_name")
             if title:
-                matches = svc.list_tasks(search=str(title))
+                matches = svc.list_tasks(search=str(title), user_id=user_id)
                 if matches:
                     raw_id = matches[0].id
         if raw_id is None:
@@ -287,7 +291,7 @@ class DeleteTaskTool(BaseTool):
         except (ValueError, TypeError):
             return {"success": False, "error": f"Invalid task_id: {raw_id}"}
         svc.delete_task(task_id)
-        record_activity(session, f"Task deleted: ID #{task_id}", source="task")
+        record_activity(session, f"Task deleted: ID #{task_id}", source="task", user_id=user_id)
         return {"success": True, "message": f"Task #{task_id} deleted successfully."}
 
 
@@ -335,7 +339,10 @@ class ListProjectsTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
-        projs = svc.list_projects(include_archived=args.get("include_archived", False))
+        projs = svc.list_projects(
+            include_archived=args.get("include_archived", False),
+            user_id=args.get("user_id"),
+        )
         return {"projects": [_to_dict(p) for p in projs]}
 
 
@@ -354,9 +361,11 @@ class ArchiveProjectTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
         project_id = args.get("project_id") or args.get("id")
+        user_id = args.get("user_id")
         if not project_id:
             raise ValueError("project_id is required for archive_project")
         proj = svc.archive_project(project_id)
+        record_activity(session, f"Project archived: ID #{project_id}", source="project", user_id=user_id or proj.user_id)
         return _to_dict(proj)
 
 
@@ -375,9 +384,11 @@ class DeleteProjectTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
         project_id = args.get("project_id") or args.get("id")
+        user_id = args.get("user_id")
         if not project_id:
             raise ValueError("project_id is required for delete_project")
         svc.delete_project(project_id)
+        record_activity(session, f"Project deleted: ID #{project_id}", source="project", user_id=user_id)
         return {"success": True, "message": f"Project #{project_id} deleted successfully."}
 
 
@@ -400,16 +411,17 @@ class AssignTaskToProjectTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         task_svc = TaskService(session)
         proj_svc = ProjectService(session)
+        user_id = args.get("user_id")
         raw_task_id = args.get("task_id") or args.get("id")
         if not raw_task_id and (args.get("task_title") or args.get("title")):
             t_title = str(args.get("task_title") or args.get("title")).lower()
-            for t in task_svc.list_tasks():
+            for t in task_svc.list_tasks(user_id=user_id):
                 if t_title in t.title.lower():
                     raw_task_id = t.id
                     break
         elif isinstance(raw_task_id, str) and not raw_task_id.isdigit():
             t_title = raw_task_id.lower()
-            for t in task_svc.list_tasks():
+            for t in task_svc.list_tasks(user_id=user_id):
                 if t_title in t.title.lower():
                     raw_task_id = t.id
                     break
@@ -423,7 +435,7 @@ class AssignTaskToProjectTool(BaseTool):
             if p_name in ("none", "null", "unlink", "clear"):
                 target_proj_id = None
             else:
-                for p in proj_svc.list_projects():
+                for p in proj_svc.list_projects(user_id=user_id):
                     if p_name in p.name.lower():
                         target_proj_id = p.id
                         break
@@ -436,7 +448,7 @@ class AssignTaskToProjectTool(BaseTool):
                 proj_title = p.name if p else f"#{target_proj_id}"
             except Exception:
                 proj_title = f"#{target_proj_id}"
-        record_activity(session, f"Task #{task_id} connected to project: {proj_title}", source="project")
+        record_activity(session, f"Task #{task_id} connected to project: {proj_title}", source="project", user_id=user_id or task.user_id)
         return {
             "success": True,
             "task_id": task.id,
@@ -488,6 +500,26 @@ class CreateHabitTool(BaseTool):
         return _to_dict(habit)
 
 
+class ListHabitsTool(BaseTool):
+    name = "list_habits"
+    description = "List all tracked habits and routines."
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "include_archived": {"type": "boolean", "default": False},
+        },
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        svc = HabitService(session)
+        habits = svc.list_habits(
+            include_archived=args.get("include_archived", False),
+            user_id=args.get("user_id"),
+        )
+        return {"habits": [_to_dict(h) for h in habits]}
+
+
 class CompleteHabitTool(BaseTool):
     name = "complete_habit"
     description = "Record a completion for a habit."
@@ -502,11 +534,12 @@ class CompleteHabitTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
+        user_id = args.get("user_id")
         raw_id = args.get("habit_id") or args.get("id")
         if not raw_id:
             name = args.get("name") or args.get("habit_name") or args.get("title")
             if name:
-                habits = svc.list_habits()
+                habits = svc.list_habits(user_id=user_id)
                 for h in habits:
                     if str(name).lower() in h.name.lower():
                         raw_id = h.id
@@ -520,9 +553,9 @@ class CompleteHabitTool(BaseTool):
             if h:
                 res["habit_name"] = h.name
                 res["habit_id"] = h.id
-                record_activity(session, f"Habit completed: {h.name}", source="habit")
+                record_activity(session, f"Habit completed: {h.name}", source="habit", user_id=user_id or h.user_id)
         except Exception:
-            record_activity(session, f"Habit completed: ID #{raw_id}", source="habit")
+            record_activity(session, f"Habit completed: ID #{raw_id}", source="habit", user_id=user_id)
         return res
 
 
@@ -540,11 +573,12 @@ class GetHabitStatisticsTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
+        user_id = args.get("user_id")
         raw_id = args.get("habit_id") or args.get("id")
         if not raw_id:
             name = args.get("name") or args.get("habit_name")
             if name:
-                habits = svc.list_habits()
+                habits = svc.list_habits(user_id=user_id)
                 for h in habits:
                     if str(name).lower() in h.name.lower():
                         raw_id = h.id
@@ -569,11 +603,12 @@ class DeleteHabitTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
+        user_id = args.get("user_id")
         raw_id = args.get("habit_id") or args.get("id")
         if not raw_id:
             name = args.get("name") or args.get("habit_name") or args.get("title")
             if name:
-                habits = svc.list_habits()
+                habits = svc.list_habits(user_id=user_id)
                 for h in habits:
                     if str(name).lower() in h.name.lower():
                         raw_id = h.id
@@ -581,7 +616,7 @@ class DeleteHabitTool(BaseTool):
         if not raw_id:
             return {"success": False, "error": "habit_id is required"}
         svc.delete_habit(int(raw_id))
-        record_activity(session, f"Habit deleted: ID #{raw_id}", source="habit")
+        record_activity(session, f"Habit deleted: ID #{raw_id}", source="habit", user_id=user_id)
         return {"success": True, "message": f"Habit #{raw_id} deleted successfully.", "habit_id": int(raw_id)}
 
 
@@ -625,7 +660,7 @@ class EndPomodoroTool(BaseTool):
             args["session_id"],
             interrupted=args.get("interrupted", False),
         )
-        record_activity(session, f"Pomodoro ended: session #{args['session_id']}", source="pomodoro")
+        record_activity(session, f"Pomodoro ended: session #{args['session_id']}", source="pomodoro", user_id=args.get("user_id"))
         return _to_dict(pomo)
 
 
@@ -644,6 +679,7 @@ class DeletePomodoroSessionTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = PomodoroSessionService(session)
         svc.delete_session(args["session_id"])
+        record_activity(session, f"Pomodoro session deleted: ID #{args['session_id']}", source="pomodoro", user_id=args.get("user_id"))
         return {"success": True, "message": f"Pomodoro session #{args['session_id']} deleted successfully."}
 
 
@@ -702,12 +738,13 @@ class ListRemindersTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ReminderService(session)
+        user_id = args.get("user_id")
         if args.get("upcoming"):
-            rems = svc.list_upcoming_reminders()
+            rems = svc.list_upcoming_reminders(user_id=user_id)
         elif args.get("due"):
-            rems = svc.list_due_reminders()
+            rems = svc.list_due_reminders(user_id=user_id)
         else:
-            rems = svc.list_reminders()
+            rems = svc.list_reminders(user_id=user_id)
         return {"reminders": [_to_dict(r) for r in rems]}
 
 
@@ -726,10 +763,11 @@ class DeleteReminderTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ReminderService(session)
         raw_id = args.get("reminder_id") or args.get("id")
+        user_id = args.get("user_id")
         if not raw_id:
             msg = args.get("message") or args.get("title")
             if msg:
-                rems = svc.list_reminders()
+                rems = svc.list_reminders(user_id=user_id)
                 for r in rems:
                     if str(msg).lower() in r.message.lower():
                         raw_id = r.id
@@ -737,7 +775,7 @@ class DeleteReminderTool(BaseTool):
         if not raw_id:
             return {"success": False, "error": "reminder_id is required"}
         svc.delete_reminder(int(raw_id))
-        record_activity(session, f"Reminder deleted: ID #{raw_id}", source="reminder")
+        record_activity(session, f"Reminder deleted: ID #{raw_id}", source="reminder", user_id=user_id)
         return {"success": True, "message": f"Reminder #{raw_id} deleted successfully.", "reminder_id": int(raw_id)}
 
 
@@ -802,7 +840,7 @@ class ListScheduleTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ScheduleService(session)
-        items = svc.list_schedule_items()
+        items = svc.list_schedule_items(user_id=args.get("user_id"))
         return {"schedule_items": [_to_dict(s) for s in items]}
 
 
@@ -821,10 +859,11 @@ class DeleteScheduleItemTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ScheduleService(session)
         raw_id = args.get("item_id") or args.get("id") or args.get("schedule_id")
+        user_id = args.get("user_id")
         if not raw_id:
             title = args.get("title") or args.get("name")
             if title:
-                items = svc.list_schedule_items()
+                items = svc.list_schedule_items(user_id=user_id)
                 for s in items:
                     if str(title).lower() in s.title.lower():
                         raw_id = s.id
@@ -832,7 +871,7 @@ class DeleteScheduleItemTool(BaseTool):
         if not raw_id:
             return {"success": False, "error": "item_id is required"}
         svc.delete_schedule_item(int(raw_id))
-        record_activity(session, f"Schedule item deleted: ID #{raw_id}", source="schedule")
+        record_activity(session, f"Schedule item deleted: ID #{raw_id}", source="schedule", user_id=user_id)
         return {"success": True, "message": f"Schedule item #{raw_id} deleted successfully.", "item_id": int(raw_id)}
 
 
@@ -850,7 +889,7 @@ class ListNotificationsTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = NotificationService(session)
-        notifs = svc.list_notifications(unread_only=args.get("unread_only", False))
+        notifs = svc.list_notifications(unread_only=args.get("unread_only", False), user_id=args.get("user_id"))
         return {"notifications": [_to_dict(n) for n in notifs]}
 
 
@@ -869,6 +908,7 @@ class MarkNotificationReadTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = NotificationService(session)
         notif = svc.mark_read(args["notification_id"])
+        record_activity(session, f"Notification marked read: ID #{args['notification_id']}", source="notification", user_id=args.get("user_id"))
         return _to_dict(notif)
 
 
@@ -905,14 +945,15 @@ class SearchChatHistoryTool(BaseTool):
         limit = min(max(int(args.get("limit", 5)), 1), 10)
         from app.storage.models import Message, Conversation
         q_pattern = f"%{query}%"
-        matches = (
+        q = (
             session.query(Message, Conversation.title)
             .join(Conversation, Message.conversation_id == Conversation.id)
             .filter(Message.content.ilike(q_pattern))
-            .order_by(Message.created_at.desc())
-            .limit(limit)
-            .all()
         )
+        user_id = args.get("user_id")
+        if user_id is not None:
+            q = q.filter(Conversation.user_id == user_id)
+        matches = q.order_by(Message.created_at.desc()).limit(limit).all()
         results = []
         for m, conv_title in matches:
             title = conv_title or f"Chat #{m.conversation_id}"
@@ -985,6 +1026,7 @@ class ListMemoriesTool(BaseTool):
         mems = svc.list_memories(
             category=args.get("category"),
             include_archived=args.get("include_archived", False),
+            user_id=args.get("user_id"),
         )
         return {"memories": [_to_dict(m) for m in mems]}
 
@@ -1008,6 +1050,7 @@ class SearchMemoriesTool(BaseTool):
             query=args["query"],
             category=args.get("category"),
             limit=10,
+            user_id=args.get("user_id"),
         )
         return {"memories": [_to_dict(m) for m in mems]}
 
@@ -1029,6 +1072,7 @@ class UpdateMemoryTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = MemoryService(session)
         raw_id = args.get("memory_id") or args.get("id")
+        user_id = args.get("user_id")
         if not raw_id:
             raise ValueError("memory_id is required for update_memory")
         cat = None
@@ -1041,6 +1085,7 @@ class UpdateMemoryTool(BaseTool):
             int(raw_id),
             MemoryUpdate(content=args.get("content"), category=cat),
         )
+        record_activity(session, f"Memory updated: ID #{raw_id}", source="memory", user_id=user_id or mem.user_id)
         return _to_dict(mem)
 
 
@@ -1060,22 +1105,35 @@ class DeleteMemoryTool(BaseTool):
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = MemoryService(session)
         raw_id = args.get("memory_id") or args.get("id")
+        user_id = args.get("user_id")
         if not raw_id:
             q = args.get("content") or args.get("query")
             if q:
-                mems = svc.retrieve_relevant_memories(query=str(q), limit=1)
+                mems = svc.retrieve_relevant_memories(query=str(q), limit=1, user_id=user_id)
                 if mems:
                     raw_id = mems[0].id
         if not raw_id:
             return {"success": False, "error": "memory_id is required"}
         if args.get("hard_delete"):
             svc.delete_memory(int(raw_id))
+            record_activity(session, f"Memory deleted: ID #{raw_id}", source="memory", user_id=user_id)
             return {"success": True, "message": f"Memory #{raw_id} permanently deleted.", "memory_id": int(raw_id)}
         else:
             mem = svc.archive_memory(int(raw_id))
+            record_activity(session, f"Memory archived: ID #{raw_id}", source="memory", user_id=user_id)
             res = _to_dict(mem)
             res["message"] = f"Memory #{raw_id} archived successfully."
             return res
+
+
+def _get_user_file_service(args: dict[str, Any]) -> FileService:
+    user_id = args.get("user_id")
+    if user_id:
+        from app.core.config import get_settings
+        user_ws = get_settings().ensure_workspace_dir() / "users" / f"user_{user_id}" / "files"
+        user_ws.mkdir(parents=True, exist_ok=True)
+        return FileService(workspace_dir=user_ws)
+    return FileService()
 
 
 # ---------------- FILES / WORKSPACE ----------------
@@ -1095,7 +1153,7 @@ class ListWorkspaceFilesTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         files = svc.list_files(sub_path=args.get("sub_path", ""))
         return {"files": [_to_dict(f) for f in files]}
 
@@ -1116,7 +1174,7 @@ class ReadWorkspaceFileTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         result = svc.read_file(relative_path=args["path"])
         return _to_dict(result)
 
@@ -1141,13 +1199,13 @@ class CreateWorkspaceFileTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         result = svc.write_file(
             relative_path=args["path"],
             content=args["content"],
             overwrite=False,
         )
-        record_activity(session, f"File created: {args['path']}", source="file")
+        record_activity(session, f"File created: {args['path']}", source="file", user_id=args.get("user_id"))
         return _to_dict(result)
 
 
@@ -1165,13 +1223,15 @@ class UpdateWorkspaceFileTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         target = svc.resolve_and_validate_path(args["path"])
         if not target.exists():
             from app.files.exceptions import FileNotFoundInWorkspaceError
 
             raise FileNotFoundInWorkspaceError(f"File '{args['path']}' not found in workspace.")
-        return _to_dict(svc.write_file(args["path"], args["content"], overwrite=True))
+        res = svc.write_file(args["path"], args["content"], overwrite=True)
+        record_activity(session, f"File updated: {args['path']}", source="file", user_id=args.get("user_id"))
+        return _to_dict(res)
 
 
 class SearchWorkspaceFilesTool(BaseTool):
@@ -1195,7 +1255,7 @@ class SearchWorkspaceFilesTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         files = svc.search_files(
             query=args["query"],
             sub_path=args.get("sub_path", ""),
@@ -1219,8 +1279,9 @@ class DeleteWorkspaceFileTool(BaseTool):
     }
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
-        svc = FileService()
+        svc = _get_user_file_service(args)
         svc.delete_file(relative_path=args["path"])
+        record_activity(session, f"File deleted: {args['path']}", source="file", user_id=args.get("user_id"))
         return {"success": True, "message": f"Path '{args['path']}' deleted successfully."}
 
 
@@ -1290,6 +1351,7 @@ def get_default_tool_registry() -> ToolRegistry:
     registry.register(AssignTaskToProjectTool())
 
     registry.register(CreateHabitTool())
+    registry.register(ListHabitsTool())
     registry.register(CompleteHabitTool())
     registry.register(GetHabitStatisticsTool())
     registry.register(DeleteHabitTool())

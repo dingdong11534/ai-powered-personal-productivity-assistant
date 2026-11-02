@@ -15,22 +15,22 @@ from app.tasks.service import TaskService
 class DailyPlanner:
     """Computes a deterministic daily plan based on system state and user preferences."""
 
-    def generate_plan(self, session: Session) -> dict[str, Any]:
+    def generate_plan(self, session: Session, user_id: int | None = None) -> dict[str, Any]:
         task_svc = TaskService(session)
         habit_svc = HabitService(session)
         sched_svc = ScheduleService(session)
         memory_svc = MemoryService(session)
 
-        all_tasks = task_svc.list_tasks(completed=False)
+        all_tasks = task_svc.list_tasks(completed=False, user_id=user_id)
         # Sort by priority ascending (1 = Critical), then deadline nullable
         all_tasks.sort(key=lambda t: (t.priority, t.deadline or datetime(9999, 12, 31)))
 
         top_tasks = all_tasks[:5]
-        habits = habit_svc.list_habits(include_archived=False)
-        schedule = sched_svc.list_schedule_items()
+        habits = habit_svc.list_habits(include_archived=False, user_id=user_id)
+        schedule = sched_svc.list_schedule_items(user_id=user_id)
 
-        prefs = memory_svc.list_memories(category=MemoryCategory.PREFERENCE)
-        routines = memory_svc.list_memories(category=MemoryCategory.ROUTINE)
+        prefs = memory_svc.list_memories(category=MemoryCategory.PREFERENCE, user_id=user_id)
+        routines = memory_svc.list_memories(category=MemoryCategory.ROUTINE, user_id=user_id)
 
         plan_summary = {
             "top_tasks_to_tackle": [_to_dict(t) for t in top_tasks],
@@ -42,8 +42,8 @@ class DailyPlanner:
         }
         return plan_summary
 
-    def format_plan_prompt(self, session: Session) -> str:
-        plan = self.generate_plan(session)
+    def format_plan_prompt(self, session: Session, user_id: int | None = None) -> str:
+        plan = self.generate_plan(session, user_id=user_id)
         lines = ["=== DETERMINISTIC DAILY PLAN PROPOSAL ==="]
         lines.append(f"Total Pending Tasks: {plan['total_pending_tasks_count']}")
 

@@ -245,3 +245,94 @@ def test_user_custom_api_keys_and_default_keys(auth_client):
     assert clear_res.status_code == 200
     assert clear_res.json()["has_custom_key"] is False
 
+
+def test_ai_saves_data_to_specific_user_and_isolates_context(auth_client):
+    """Verify that when a specific user tells AI to save data, it saves to their database records,
+
+    and that AI context retrieval is strictly isolated to that specific user.
+    """
+    from app.ai.context import ContextBuilder
+    from app.ai.tools.implementations import get_default_tool_registry
+    from app.storage.database import SessionLocal
+    from app.storage.models import Memory, Task, User
+
+    # 1. Register/Login user_elena
+    reg_e = auth_client.post("/api/auth/register", json={"username": "user_elena", "password": "password123"})
+    token_e = reg_e.json()["access_token"] if reg_e.status_code == 201 else auth_client.post("/api/auth/login", json={"username": "user_elena", "password": "password123"}).json()["access_token"]
+    headers_e = {"Authorization": f"Bearer {token_e}"}
+
+    # 2. Register/Login user_frank
+    reg_f = auth_client.post("/api/auth/register", json={"username": "user_frank", "password": "password123"})
+    token_f = reg_f.json()["access_token"] if reg_f.status_code == 201 else auth_client.post("/api/auth/login", json={"username": "user_frank", "password": "password123"}).json()["access_token"]
+    headers_f = {"Authorization": f"Bearer {token_f}"}
+
+    with SessionLocal() as db:
+        elena = db.query(User).filter(User.username == "user_elena").first()
+        frank = db.query(User).filter(User.username == "user_frank").first()
+        assert elena is not None
+        assert frank is not None
+        assert elena.id != frank.id
+
+    # Elena creates a conversation and sends message to AI
+    conv_e = auth_client.post("/conversations", json={"title": "Elena Chat"}, headers=headers_e).json()
+    e_chat_res = auth_client.post(
+        f"/conversations/{conv_e['id']}/messages",
+        json={"role": "user", "content": "create a task named Elena Secret Research with critical priority"},
+        headers=headers_e,
+    )
+    assert e_chat_res.status_code == 201
+
+    # Elena saves a memory via AI tool
+    e_mem_res = auth_client.post(
+        f"/conversations/{conv_e['id']}/messages",
+        json={"role": "user", "content": "remember that Elena prefers green tea every morning"},
+        headers=headers_e,
+    )
+    assert e_mem_res.status_code == 201
+
+    # Verify Elena's task is stored under Elena's user_id, NOT admin and NOT Frank
+    with SessionLocal() as db:
+        elena_task = db.query(Task).filter(Task.title == "Elena Secret Research").first()
+        assert elena_task is not None
+        assert elena_task.user_id == elena.id
+        assert elena_task.user_id != frank.id
+        assert elena_task.user_id != 1  # Not admin!
+
+        # Check memory
+        elena_mem = db.query(Memory).filter(Memory.content.contains("green tea")).first()
+        if elena_mem:
+            assert elena_mem.user_id == elena.id
+            assert elena_mem.user_id != frank.id
+
+        # Frank's AI context should NOT see Elena's task or memory
+        cb = ContextBuilder()
+        frank_ctx = cb.build_context(db, user_id=frank.id)
+        frank_task_titles = [t["title"] for t in frank_ctx.get("recent_tasks", [])]
+        assert "Elena Secret Research" not in frank_task_titles
+
+        frank_mem_contents = [m["content"] for m in frank_ctx.get("relevant_memories", [])]
+        for m_text in frank_mem_contents:
+            assert "green tea" not in m_text
+
+        # Tool registry execution for Frank must isolate
+        registry = get_default_tool_registry()
+        res_list = registry.execute_tool("list_tasks", {}, db, user=frank)
+        assert res_list["success"] is True
+        f_tasks = res_list["data"]["tasks"]
+        assert all(t["id"] != elena_task.id for t in f_tasks)
+
+        # Frank creates a task through AI
+        conv_f = auth_client.post("/conversations", json={"title": "Frank Chat"}, headers=headers_f).json()
+        f_chat_res = auth_client.post(
+            f"/conversations/{conv_f['id']}/messages",
+            json={"role": "user", "content": "create a task named Frank Project Mission with high priority"},
+            headers=headers_f,
+        )
+        assert f_chat_res.status_code == 201
+
+        frank_task = db.query(Task).filter(Task.title == "Frank Project Mission").first()
+        assert frank_task is not None
+        assert frank_task.user_id == frank.id
+        assert frank_task.user_id != elena.id
+
+

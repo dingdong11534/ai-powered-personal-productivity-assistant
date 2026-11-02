@@ -180,6 +180,7 @@ class AssistantCore:
                     tool_args,
                     self.session,
                     destructive_authorized=True,
+                    user=self.user,
                 )
                 self.conv_svc.add_message(
                     conversation_id,
@@ -220,6 +221,7 @@ class AssistantCore:
                         pending_creation,
                         self.session,
                         destructive_authorized=False,
+                        user=self.user,
                     )
                     self.conv_svc.add_message(
                         conversation_id,
@@ -273,6 +275,7 @@ class AssistantCore:
                     tc.arguments,
                     self.session,
                     destructive_authorized=self.destructive_authorized,
+                    user=self.user,
                 )
                 self.conv_svc.add_message(
                     conversation_id,
@@ -350,6 +353,7 @@ class AssistantCore:
                     tool_args,
                     self.session,
                     destructive_authorized=True,
+                    user=self.user,
                 )
                 self.conv_svc.add_message(
                     conversation_id,
@@ -416,6 +420,7 @@ class AssistantCore:
                         tc_args,
                         self.session,
                         destructive_authorized=False,
+                        user=self.user,
                     )
                     yield {
                         "event": "tool_result",
@@ -488,6 +493,7 @@ class AssistantCore:
                     tc.arguments,
                     self.session,
                     destructive_authorized=self.destructive_authorized,
+                    user=self.user,
                 )
                 yield {
                     "event": "tool_result",
@@ -531,12 +537,15 @@ class AssistantCore:
             "3. If the user provides a task ID or task name (e.g. '14', 'take id 14', 'delete Deepak Task'), immediately call the tool with that ID.\n"
             "4. NEVER state or claim an action was completed, created, modified, or deleted unless a corresponding tool call actually executed and returned success=true in this turn.\n\n"
         )
-        system_text += self.context_builder.format_context_prompt(self.session, query=latest_user_text, is_local=is_local)
+        user_id = getattr(self.user, "id", None) if self.user else None
+        system_text += self.context_builder.format_context_prompt(
+            self.session, query=latest_user_text, is_local=is_local, user_id=user_id
+        )
 
         # Include daily plan if relevant
         lower = latest_user_text.lower()
         if "plan" in lower or "what should i work on" in lower or "today" in lower:
-            system_text += "\n\n" + self.planner.format_plan_prompt(self.session)
+            system_text += "\n\n" + self.planner.format_plan_prompt(self.session, user_id=user_id)
 
         prompt_messages: list[dict[str, Any]] = [{"role": "system", "content": system_text}]
 

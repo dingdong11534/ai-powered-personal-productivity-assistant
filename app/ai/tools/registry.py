@@ -85,6 +85,7 @@ class ToolRegistry:
         session: Session,
         *,
         destructive_authorized: bool = False,
+        user: Any = None,
     ) -> dict[str, Any]:
         """Validate permissions and execute the tool safely.
 
@@ -93,6 +94,16 @@ class ToolRegistry:
         tool = self.get_tool(name)
         if not tool:
             return {"success": False, "error": f"Tool '{name}' is not registered."}
+
+        # Inject and isolate user_id from authenticated user context into tool arguments
+        args = dict(args)
+        if user is not None:
+            uid = getattr(user, "id", None)
+            role = getattr(user, "role", "user")
+            if uid is not None:
+                # Regular users are strictly bound to their own user_id
+                if role != "admin" or "user_id" not in args:
+                    args["user_id"] = uid
 
         # Permission check
         try:
@@ -114,3 +125,4 @@ class ToolRegistry:
             return {"success": True, "data": result}
         except Exception as err:
             return {"success": False, "error": str(err)}
+
