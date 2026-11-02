@@ -74,3 +74,11 @@ def test_list_sessions_filter_by_task(client):
     sessions = response.json()
     assert len(sessions) == 1
     assert sessions[0]["task_id"] == task["id"]
+
+
+def test_start_session_with_session_name(client):
+    response = client.post("/pomodoro", json={"session_name": "Deep Architecture Study"})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["session_name"] == "Deep Architecture Study"
+    assert body["ended_at"] is None

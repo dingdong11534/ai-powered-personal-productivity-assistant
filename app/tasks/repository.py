@@ -74,33 +74,24 @@ class TaskRepository:
         deadline_after: datetime | None = None,
         completed: bool | None = None,
         search: str | None = None,
+        user_id: int | None = None,
     ) -> list[Task]:
         """Return up to `limit` tasks matching every given filter,
         newest first, skipping the first `skip`.
-
-        Every filter argument is optional and independent — omitted ones
-        (left as None/default) simply aren't applied, so `list()` with
-        no arguments is unfiltered ("give me everything"), matching how
-        GET /tasks behaves with no query parameters.
-
-        `completed` is a convenience filter layered on top of `status`:
-        `completed=True` means `status == DONE`, `completed=False` means
-        `status != DONE`. It's independent of the `status` filter (both
-        can be supplied at once, combined with AND) rather than a
-        special-cased alias for it — "not done" is a broader question
-        ("anything still needing attention") than "status is exactly
-        todo/in_progress/cancelled", and a caller may want to ask either.
-
-        `search` matches (case-insensitively, via `ilike`) against
-        `title` OR `description` — a simple substring search, not a
-        full-text index. See docs/architecture.md's "Search and filter"
-        section for why that's the deliberate scope for this phase.
-
-        `tag_id` filters via a join through the `task_tags` association
-        table — see app.storage.models for why that's a plain Table
-        rather than a mapped class.
         """
         stmt = select(Task).order_by(Task.created_at.desc())
+
+        if user_id is not None:
+            from app.storage.models import ProjectMember
+            member_project_ids = select(ProjectMember.project_id).where(
+                ProjectMember.user_id == user_id,
+                ProjectMember.status == "accepted",
+            )
+            stmt = stmt.where(
+                (Task.user_id == user_id)
+                | (Task.assigned_user_id == user_id)
+                | (Task.project_id.in_(member_project_ids))
+            )
 
         if status is not None:
             stmt = stmt.where(Task.status == status)

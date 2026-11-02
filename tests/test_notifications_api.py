@@ -55,3 +55,39 @@ def test_mark_notification_unread(client):
 
     assert response.status_code == 200
     assert response.json()["read_at"] is None
+
+
+def test_mark_all_read(client):
+    n1 = client.post("/notifications", json={"title": "Bulk unread 1"}).json()
+    n2 = client.post("/notifications", json={"title": "Bulk unread 2"}).json()
+
+    response = client.post("/notifications/read-all")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["marked_read"] >= 2
+
+    # Verify unread list is now empty of these
+    unread_res = client.get("/notifications?unread_only=true")
+    unread_ids = {n["id"] for n in unread_res.json()}
+    assert n1["id"] not in unread_ids
+    assert n2["id"] not in unread_ids
+
+
+def test_search_notifications(client):
+    n1 = client.post("/notifications", json={"title": "Alpha Notification Task", "body": None}).json()
+    n2 = client.post("/notifications", json={"title": "Beta Notice", "body": "Contains secret keyword"}).json()
+
+    # Search title with null body
+    res1 = client.get("/notifications?search=Alpha")
+    assert res1.status_code == 200
+    ids1 = [n["id"] for n in res1.json()]
+    assert n1["id"] in ids1
+    assert n2["id"] not in ids1
+
+    # Search body
+    res2 = client.get("/notifications?search=secret")
+    assert res2.status_code == 200
+    ids2 = [n["id"] for n in res2.json()]
+    assert n2["id"] in ids2
+    assert n1["id"] not in ids2
+

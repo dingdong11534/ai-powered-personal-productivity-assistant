@@ -26,7 +26,12 @@ class PomodoroSessionRepository:
         return self.db.get(PomodoroSession, session_id)
 
     def list(
-        self, *, skip: int = 0, limit: int = 100, task_id: int | None = None
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        task_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[PomodoroSession]:
         stmt = (
             select(PomodoroSession)
@@ -36,6 +41,8 @@ class PomodoroSessionRepository:
         )
         if task_id is not None:
             stmt = stmt.where(PomodoroSession.task_id == task_id)
+        if user_id is not None:
+            stmt = stmt.where(PomodoroSession.user_id == user_id)
         return list(self.db.scalars(stmt))
 
     def update(self, session: PomodoroSession, changes: dict) -> PomodoroSession:

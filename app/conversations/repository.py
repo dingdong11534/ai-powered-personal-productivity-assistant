@@ -10,8 +10,8 @@ class ConversationRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def create_conversation(self, title: str | None = None) -> Conversation:
-        conv = Conversation(title=title)
+    def create_conversation(self, title: str | None = None, user_id: int | None = None) -> Conversation:
+        conv = Conversation(title=title, user_id=user_id)
         self.session.add(conv)
         self.session.commit()
         self.session.refresh(conv)
@@ -20,8 +20,13 @@ class ConversationRepository:
     def get_conversation(self, conversation_id: int) -> Conversation | None:
         return self.session.get(Conversation, conversation_id)
 
-    def list_conversations(self, limit: int = 50, skip: int = 0) -> list[Conversation]:
-        stmt = select(Conversation).order_by(Conversation.created_at.desc()).offset(skip).limit(limit)
+    def list_conversations(
+        self, limit: int = 50, skip: int = 0, user_id: int | None = None
+    ) -> list[Conversation]:
+        stmt = select(Conversation).order_by(Conversation.created_at.desc())
+        if user_id is not None:
+            stmt = stmt.where(Conversation.user_id == user_id)
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.session.scalars(stmt).all())
 
     def delete_conversation(self, conversation_id: int) -> bool:

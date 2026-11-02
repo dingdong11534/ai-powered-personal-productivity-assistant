@@ -41,3 +41,44 @@ def test_voice_input_elements_present(client):
     assert js_resp.status_code == 200
     assert "toggleVoiceInput" in js_resp.text
     assert "SpeechRecognition" in js_resp.text
+
+
+def test_pomodoro_floating_widget_and_naming_elements(client):
+    html_resp = client.get("/")
+    assert html_resp.status_code == 200
+    assert 'id="floating-pomo-widget"' in html_resp.text
+    assert 'id="pomo-session-name"' in html_resp.text
+
+    js_resp = client.get("/static/js/app.js")
+    assert js_resp.status_code == 200
+    assert "checkActivePomodoroSession" in js_resp.text
+    assert "floating-pomo-widget" in js_resp.text
+    assert "navigateTo" in js_resp.text
+
+
+def test_tool_action_cards_and_links_present(client):
+    js_resp = client.get("/static/js/app.js")
+    assert js_resp.status_code == 200
+    assert "renderToolActionCard" in js_resp.text
+    assert "create_reminder" in js_resp.text
+    assert "create_schedule_item" in js_resp.text
+    assert "create_habit" in js_resp.text
+    assert "complete_habit" in js_resp.text
+    assert "create_project" in js_resp.text
+    assert "start_pomodoro" in js_resp.text
+    assert "remember_information" in js_resp.text
+    assert "tool-action-card" in js_resp.text
+    assert "data-target-tab" in js_resp.text
+    assert "data-target-query" in js_resp.text
+
+
+def test_pomodoro_and_notifications_no_overlap(client):
+    css_resp = client.get("/static/css/style.css")
+    assert css_resp.status_code == 200
+    css_text = css_resp.text
+
+    # Verify toast-container is positioned at the top area to avoid overlapping bottom-right pomodoro widget
+    assert ".toast-container" in css_text
+    assert "top: calc(var(--topbar-height) + 1rem)" in css_text or "top:" in css_text
+    assert ".floating-pomo-widget" in css_text
+    assert "bottom: 24px" in css_text

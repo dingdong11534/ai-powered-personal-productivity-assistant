@@ -113,6 +113,33 @@ class TaskStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class User(Base):
+    """Registered application user with authentication and role."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", server_default="user")
+    custom_api_keys: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    token_usage: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    @property
+    def is_online(self) -> bool:
+        if not self.last_active_at:
+            return False
+        diff = datetime.utcnow() - self.last_active_at
+        return diff.total_seconds() < 30
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"User(id={self.id!r}, username={self.username!r}, role={self.role!r})"
+
+
 class Project(Base):
     """A container tasks can optionally belong to.
 
@@ -138,6 +165,9 @@ class Project(Base):
         "be complexity a Phase 3 UI is better placed to add once it "
         "knows what format it actually wants.",
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -149,6 +179,9 @@ class Project(Base):
     )
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+    members: Mapped[list["ProjectMember"]] = relationship(
+        "ProjectMember", back_populates="project", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return (
@@ -180,6 +213,12 @@ class Task(Base):
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    assigned_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -188,12 +227,19 @@ class Task(Base):
     )
 
     project: Mapped[Project | None] = relationship(back_populates="tasks")
+    assigned_user: Mapped[User | None] = relationship("User", foreign_keys=[assigned_user_id])
     tags: Mapped[list["Tag"]] = relationship(
         secondary="task_tags", back_populates="tasks", order_by="Tag.name"
     )
 
+    @property
+    def assigned_username(self) -> str | None:
+        return self.assigned_user.username if self.assigned_user else None
+
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+
         return f"Task(id={self.id!r}, title={self.title!r}, status={self.status!r})"
+
 
 
 class Tag(Base):
@@ -286,6 +332,9 @@ class Habit(Base):
         SAEnum(HabitFrequency, name="habit_frequency"), nullable=False
     )
     target_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -358,6 +407,10 @@ class PomodoroSession(Base):
     task_id: Mapped[int | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    session_name: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -387,6 +440,9 @@ class Reminder(Base):
     task_id: Mapped[int | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     remind_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     message: Mapped[str] = mapped_column(String(500), nullable=False)
     fired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -414,6 +470,9 @@ class ScheduleItem(Base):
     task_id: Mapped[int | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid only
         return f"ScheduleItem(id={self.id!r}, title={self.title!r})"
@@ -432,6 +491,9 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -457,6 +519,9 @@ class Conversation(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -516,6 +581,9 @@ class Memory(Base):
     category: Mapped[MemoryCategory] = mapped_column(
         SAEnum(MemoryCategory, name="memory_category"), nullable=False
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
@@ -531,5 +599,78 @@ class Memory(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"Memory(id={self.id!r}, category={self.category!r}, active={self.is_active!r})"
+
+
+class ProjectMember(Base):
+    """Membership of a user in a collaborative project."""
+
+    __tablename__ = "project_members"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_member"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member", server_default="member")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    invited_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    project: Mapped["Project"] = relationship("Project", back_populates="members")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    invited_by: Mapped["User | None"] = relationship("User", foreign_keys=[invited_by_id])
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"ProjectMember(project_id={self.project_id!r}, user_id={self.user_id!r}, role={self.role!r}, status={self.status!r})"
+
+
+class TaskRequest(Base):
+    """A task assignment request sent from one user to another."""
+
+    __tablename__ = "task_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    from_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    to_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    task: Mapped["Task"] = relationship("Task")
+    from_user: Mapped["User"] = relationship("User", foreign_keys=[from_user_id])
+    to_user: Mapped["User"] = relationship("User", foreign_keys=[to_user_id])
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"TaskRequest(id={self.id!r}, task_id={self.task_id!r}, from_user_id={self.from_user_id!r}, to_user_id={self.to_user_id!r}, status={self.status!r})"
+
 
 

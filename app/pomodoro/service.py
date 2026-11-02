@@ -41,11 +41,21 @@ class PomodoroSessionService:
         self.repository = PomodoroSessionRepository(db)
         self.tasks = TaskRepository(db)
 
-    def start_session(self, task_id: int | None = None) -> PomodoroSession:
+    def start_session(
+        self,
+        task_id: int | None = None,
+        session_name: str | None = None,
+        user_id: int | None = None,
+    ) -> PomodoroSession:
         if task_id is not None and self.tasks.get(task_id) is None:
             raise TaskNotFoundError(task_id)
         started_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session = PomodoroSession(task_id=task_id, started_at=started_at)
+        session = PomodoroSession(
+            task_id=task_id,
+            started_at=started_at,
+            session_name=session_name,
+            user_id=user_id,
+        )
         return self.repository.create(session)
 
     def get_session(self, session_id: int) -> PomodoroSession:
@@ -55,9 +65,14 @@ class PomodoroSessionService:
         return session
 
     def list_sessions(
-        self, *, skip: int = 0, limit: int = 100, task_id: int | None = None
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        task_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[PomodoroSession]:
-        return self.repository.list(skip=skip, limit=limit, task_id=task_id)
+        return self.repository.list(skip=skip, limit=limit, task_id=task_id, user_id=user_id)
 
     def end_session(self, session_id: int, *, interrupted: bool = False) -> PomodoroSession:
         session = self.get_session(session_id)
@@ -65,7 +80,7 @@ class PomodoroSessionService:
             raise SessionAlreadyEndedError(session_id)
 
         ended_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        duration_seconds = int((ended_at - session.started_at).total_seconds())
+        duration_seconds = max(0, int((ended_at - session.started_at).total_seconds()))
         return self.repository.update(
             session,
             {

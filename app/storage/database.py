@@ -86,13 +86,23 @@ def build_engine(database_url: str) -> Engine:
     and any future multi-database setup can build an equivalently
     configured engine without duplicating the SQLite-specific connect_args
     logic.
+
+    Supports both SQLite (local/dev) and PostgreSQL (Render / production).
+    PostgreSQL URLs starting with "postgres://" are normalised to
+    "postgresql://" for SQLAlchemy 2.x compatibility.
     """
+    # Render's DATABASE_URL uses the older "postgres://" scheme;
+    # SQLAlchemy 2.x only accepts "postgresql://".
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     return create_engine(database_url, connect_args=connect_args)
 
 
 _settings = get_settings()
-_settings.ensure_data_dir()
+# Only create the data directory for local SQLite usage; Postgres has its own host.
+if _settings.database_url.startswith("sqlite"):
+    _settings.ensure_data_dir()
 
 engine: Engine = build_engine(_settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -114,7 +124,7 @@ def get_db() -> Generator[Session, None, None]:
 def create_all_tables(bind: Engine | None = None) -> None:
     """Create every table registered on Base.metadata (idempotent — safe
     to call on an already-initialized database; existing tables are left
-    alone), then apply the narrow additive patch in `_ensure_task_project_id_column`.
+    alone), then apply additive schema patches and seed data.
 
     Imports app.storage.models locally, not at module top-level: models
     must be imported *somewhere* before create_all() runs so they've
@@ -122,65 +132,56 @@ def create_all_tables(bind: Engine | None = None) -> None:
     models.py (which imports Base from database.py) at module load time
     would be a circular import. Deferring the import to inside this
     function breaks that cycle.
+
+    Both SQLite and PostgreSQL are supported:
+    - SQLite: additive PRAGMA-based column patches keep backwards compat.
+    - PostgreSQL: `create_all` is idempotent; the helper skips PRAGMA
+      calls and uses information_schema instead.
     """
     from app.storage import models  # noqa: F401
 
     target = bind or engine
     Base.metadata.create_all(bind=target)
-    _ensure_task_project_id_column(target)
+    url_str = str(target.url)
+    if url_str.startswith("sqlite"):
+        _ensure_task_project_id_column(target)
+        _ensure_pomodoro_session_name_column(target)
+    _ensure_user_schema_and_admin(target)
 
 
-def _table_exists(conn, table_name: str) -> bool:
-    result = conn.exec_driver_sql(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=:name",
-        {"name": table_name},
-    ).fetchone()
+def _table_exists(conn, table_name: str, dialect: str = "sqlite") -> bool:
+    """Check whether a table exists in the connected database."""
+    if dialect == "sqlite":
+        result = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=:name",
+            {"name": table_name},
+        ).fetchone()
+    else:
+        # PostgreSQL / information_schema
+        result = conn.exec_driver_sql(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=:name",
+            {"name": table_name},
+        ).fetchone()
     return result is not None
 
 
+def _column_exists(conn, table_name: str, column_name: str, dialect: str = "sqlite") -> bool:
+    """Check whether a column exists in a table."""
+    if dialect == "sqlite":
+        cols = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+        return column_name in cols
+    else:
+        result = conn.exec_driver_sql(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name=:tbl AND column_name=:col",
+            {"tbl": table_name, "col": column_name},
+        ).fetchone()
+        return result is not None
+
+
 def _ensure_task_project_id_column(target_engine: Engine) -> None:
-    """Additive-only patch: add `tasks.project_id` if it's missing.
-
-    WHY THIS EXISTS
-    -----------------
-    `Base.metadata.create_all()` only creates tables that don't exist yet
-    — it never alters an existing table's columns. Phase 1 adds
-    `project_id` to the *already-existing* `tasks` table, so a database
-    created under Phase 0.2 (before this column existed) would otherwise
-    be silently out of sync with the model: SQLAlchemy would generate
-    `INSERT`/`SELECT` statements referencing a `project_id` column the
-    real table doesn't have, and every query would fail.
-
-    This function detects exactly that situation — `tasks` table exists,
-    `project_id` column doesn't — and adds the column via a plain
-    `ALTER TABLE ... ADD COLUMN`, which SQLite supports for adding a
-    nullable column with no default. Existing rows get `NULL` for the
-    new column, which is exactly correct: `project_id` is nullable
-    (a task doesn't have to belong to a project), so "we don't know"
-    and "not assigned to a project" are the same value.  No data in any
-    existing column is touched.
-
-    This patch is intentionally narrow: it fixes precisely one kind of
-    change (an added nullable column with no default, no rename, no data
-    transform). It does not generalize to a real migration tool.
-
-    SQLite-only: on any other backend this is a no-op, since only SQLite
-    is used by this project so far (see app.core.config's DATABASE_URL).
-
-    WHY NOT ALEMBIC, YET
-    -----------------------
-    See docs/architecture.md's "Migrations" section for the full
-    reasoning. Short version: everything this phase's schema needs
-    (new tables, one added nullable column) is safely expressible as
-    "create what's missing, patch what changed" — which this function
-    and `create_all_tables()` already do, and which I can verify
-    directly against SQLite semantics. The point to actually adopt
-    Alembic is documented there too: the first migration that isn't
-    purely additive (a rename, a backfill, a NOT NULL added to a
-    populated column, a dropped column) needs real up/down migration
-    scripts, because "detect and patch" stops being expressible as a
-    simple idempotent check at that point.
-    """
+    """Additive-only patch: add `tasks.project_id` if it's missing."""
     if not str(target_engine.url).startswith("sqlite"):
         return
     with target_engine.begin() as conn:
@@ -191,3 +192,129 @@ def _ensure_task_project_id_column(target_engine: Engine) -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE tasks ADD COLUMN project_id INTEGER REFERENCES projects(id)"
             )
+
+
+def _ensure_pomodoro_session_name_column(target_engine: Engine) -> None:
+    """Additive-only patch: add `pomodoro_sessions.session_name` if missing."""
+    if not str(target_engine.url).startswith("sqlite"):
+        return
+    with target_engine.begin() as conn:
+        if not _table_exists(conn, "pomodoro_sessions"):
+            return
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(pomodoro_sessions)").fetchall()}
+        if "session_name" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE pomodoro_sessions ADD COLUMN session_name TEXT"
+            )
+
+
+def _ensure_user_schema_and_admin(target_engine: Engine) -> None:
+    """Additive-only patch: add `user_id` to entity tables, create kunal admin,
+    seed test users (alice/bob/charlie/diana/edward), and backfill existing data.
+
+    Works for both SQLite (PRAGMA column inspection) and PostgreSQL
+    (information_schema column inspection). On PostgreSQL, `create_all` already
+    handles column creation, so only the missing-column additions and seed data
+    are applied here.
+    """
+    from app.users.security import hash_password
+
+    url_str = str(target_engine.url)
+    dialect = "sqlite" if url_str.startswith("sqlite") else "postgresql"
+    now_sql = "datetime('now')" if dialect == "sqlite" else "NOW()"
+
+    tables_with_user_id = [
+        "tasks",
+        "projects",
+        "habits",
+        "reminders",
+        "schedule_items",
+        "pomodoro_sessions",
+        "notifications",
+        "conversations",
+        "memories",
+    ]
+
+    with target_engine.begin() as conn:
+        # 1. Add user_id column if missing (SQLite only — PG gets this from create_all)
+        if dialect == "sqlite":
+            for table in tables_with_user_id:
+                if not _table_exists(conn, table, dialect):
+                    continue
+                if not _column_exists(conn, table, "user_id", dialect):
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+        # 2. Ensure kunal admin and extra user columns exist
+        if _table_exists(conn, "users", dialect):
+            if dialect == "sqlite":
+                # SQLite: additive ALTER TABLE patches for legacy DBs
+                if not _column_exists(conn, "users", "custom_api_keys", dialect):
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN custom_api_keys TEXT")
+                if not _column_exists(conn, "users", "last_active_at", dialect):
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN last_active_at DATETIME")
+                if not _column_exists(conn, "users", "token_usage", dialect):
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN token_usage INTEGER NOT NULL DEFAULT 0")
+
+            # 3. Seed kunal admin
+            admin_row = conn.exec_driver_sql(
+                "SELECT id, role FROM users WHERE username = 'kunal'"
+            ).fetchone()
+            if not admin_row:
+                kunal_hash = hash_password("kunalreward34")
+                conn.exec_driver_sql(
+                    f"INSERT INTO users (username, password_hash, role, token_usage, created_at) "
+                    f"VALUES ('kunal', :phash, 'admin', 0, {now_sql})",
+                    {"phash": kunal_hash},
+                )
+                admin_row = conn.exec_driver_sql(
+                    "SELECT id, role FROM users WHERE username = 'kunal'"
+                ).fetchone()
+
+            if admin_row:
+                admin_id = admin_row[0]
+                # 4. Backfill unassigned rows to admin
+                for table in tables_with_user_id:
+                    if _table_exists(conn, table, dialect):
+                        conn.exec_driver_sql(
+                            f"UPDATE {table} SET user_id = :uid WHERE user_id IS NULL",
+                            {"uid": admin_id},
+                        )
+
+            # 5. Seed test users (alice, bob, charlie, diana, edward) with password 123
+            test_users = [("alice", "123"), ("bob", "123"), ("charlie", "123"),
+                          ("diana", "123"), ("edward", "123")]
+            for uname, upwd in test_users:
+                exists = conn.exec_driver_sql(
+                    "SELECT id FROM users WHERE username = :u", {"u": uname}
+                ).fetchone()
+                if not exists:
+                    phash = hash_password(upwd)
+                    conn.exec_driver_sql(
+                        f"INSERT INTO users (username, password_hash, role, token_usage, created_at) "
+                        f"VALUES (:u, :ph, 'user', 0, {now_sql})",
+                        {"u": uname, "ph": phash},
+                    )
+
+        # 6. Ensure tasks has assigned_user_id (SQLite only for legacy DBs)
+        if dialect == "sqlite" and _table_exists(conn, "tasks", dialect):
+            if not _column_exists(conn, "tasks", "assigned_user_id", dialect):
+                conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN assigned_user_id INTEGER REFERENCES users(id)")
+
+        # 7. Populate owner memberships for projects if missing
+        if _table_exists(conn, "projects", dialect) and _table_exists(conn, "project_members", dialect):
+            projects = conn.exec_driver_sql(
+                "SELECT id, user_id FROM projects WHERE user_id IS NOT NULL"
+            ).fetchall()
+            for pid, uid in projects:
+                existing = conn.exec_driver_sql(
+                    "SELECT id FROM project_members WHERE project_id = :pid AND user_id = :uid",
+                    {"pid": pid, "uid": uid},
+                ).fetchone()
+                if not existing:
+                    conn.exec_driver_sql(
+                        f"INSERT INTO project_members (project_id, user_id, role, status, created_at, updated_at) "
+                        f"VALUES (:pid, :uid, 'owner', 'accepted', {now_sql}, {now_sql})",
+                        {"pid": pid, "uid": uid},
+                    )
+
+

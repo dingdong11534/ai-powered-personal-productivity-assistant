@@ -1,0 +1,79 @@
+## Render Deployment Configuration
+## ─────────────────────────────────
+## Deploy to https://render.com with one click:
+##   1. Push your repo to GitHub.
+##   2. Create a new Render account and connect your GitHub repo.
+##   3. Click "New Blueprint" and select this repo — Render reads render.yaml automatically.
+##   4. Set the secret environment variables listed in the "envVars" section below
+##      (those marked sync: false won't be auto-generated and must be provided by you).
+##
+## After deploy, visit:
+##   https://<your-service-name>.onrender.com/        → Dashboard
+##   https://<your-service-name>.onrender.com/docs    → Swagger API docs
+##   https://<your-service-name>.onrender.com/health  → Liveness check
+
+databases:
+  - name: assistant-db
+    databaseName: assistant
+    user: assistant_user
+    plan: free           # Upgrade to "starter" for 1 GB / persistent storage
+
+services:
+  - type: web
+    name: personal-assistant
+    runtime: python
+    plan: free           # Upgrade to "starter" for always-on (free plan sleeps after 15 min idle)
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: gunicorn app.interfaces.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /health
+    autoDeploy: true     # Re-deploy automatically on every git push to the main branch
+
+    envVars:
+      # ── Linked database (auto-populated from the "assistant-db" block above) ──
+      - key: DATABASE_URL
+        fromDatabase:
+          name: assistant-db
+          property: connectionString   # Render provides the full postgres:// URL
+
+      # ── App settings ──
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+
+      # ── AI Provider keys (fill in via Render dashboard → Environment) ──
+      - key: AI_MODE
+        value: online
+      - key: ONLINE_AI_PROVIDER
+        value: openai
+      - key: ONLINE_AI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: ONLINE_AI_MODEL
+        value: gpt-4o-mini
+      - key: ONLINE_AI_API_KEY
+        sync: false   # ← Paste your actual API key in the Render dashboard
+
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: GEMINI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+
+      - key: GROK_API_KEY
+        sync: false
+      - key: GROK_MODEL
+        value: grok-beta
+      - key: GROK_BASE_URL
+        value: https://api.x.ai/v1

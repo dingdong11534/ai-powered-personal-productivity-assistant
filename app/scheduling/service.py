@@ -54,11 +54,13 @@ class ScheduleService:
         self.repository = ScheduleItemRepository(db)
         self.tasks = TaskRepository(db)
 
-    def create_schedule_item(self, data: ScheduleItemCreate) -> ScheduleItem:
+    def create_schedule_item(self, data: ScheduleItemCreate, user_id: int | None = None) -> ScheduleItem:
         fields = data.model_dump()
         self._validate_range(fields["starts_at"], fields["ends_at"])
         if fields.get("task_id") is not None and self.tasks.get(fields["task_id"]) is None:
             raise TaskNotFoundError(fields["task_id"])
+        if user_id is not None:
+            fields["user_id"] = user_id
         item = ScheduleItem(**fields)
         return self.repository.create(item)
 
@@ -68,8 +70,10 @@ class ScheduleService:
             raise ScheduleItemNotFoundError(item_id)
         return item
 
-    def list_schedule_items(self, *, skip: int = 0, limit: int = 100) -> list[ScheduleItem]:
-        return self.repository.list(skip=skip, limit=limit)
+    def list_schedule_items(
+        self, *, skip: int = 0, limit: int = 100, user_id: int | None = None
+    ) -> list[ScheduleItem]:
+        return self.repository.list(skip=skip, limit=limit, user_id=user_id)
 
     def update_schedule_item(self, item_id: int, data: ScheduleItemUpdate) -> ScheduleItem:
         item = self.get_schedule_item(item_id)
@@ -91,15 +95,22 @@ class ScheduleService:
         self.repository.delete(item)
 
     def find_conflicts(
-        self, starts_at: datetime, ends_at: datetime, *, exclude_id: int | None = None
+        self,
+        starts_at: datetime,
+        ends_at: datetime,
+        *,
+        exclude_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[ScheduleItem]:
         """Existing items that overlap [starts_at, ends_at). See module
         docstring for why this is a query, not an enforced block."""
-        return self.repository.find_overlapping(starts_at, ends_at, exclude_id=exclude_id)
+        return self.repository.find_overlapping(
+            starts_at, ends_at, exclude_id=exclude_id, user_id=user_id
+        )
 
-    def find_all_conflicts(self) -> list[ScheduleItem]:
+    def find_all_conflicts(self, user_id: int | None = None) -> list[ScheduleItem]:
         """Find all schedule items that overlap with at least one other item."""
-        items = self.repository.list(limit=500)
+        items = self.repository.list(limit=500, user_id=user_id)
         conflicting_ids: set[int] = set()
         for i, a in enumerate(items):
             for b in items[i + 1:]:

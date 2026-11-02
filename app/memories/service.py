@@ -16,10 +16,10 @@ class MemoryService:
         self.session = session
         self.repo = MemoryRepository(session)
 
-    def create_memory(self, data: MemoryCreate) -> MemoryRead:
+    def create_memory(self, data: MemoryCreate, user_id: int | None = None) -> MemoryRead:
         clean_content = data.content.strip()
         # Duplicate check per category
-        existing = self.repo.find_duplicate(data.category, clean_content)
+        existing = self.repo.find_duplicate(data.category, clean_content, user_id=user_id)
         if existing:
             raise DuplicateMemoryError(data.category.value if hasattr(data.category, 'value') else str(data.category), clean_content)
 
@@ -27,6 +27,7 @@ class MemoryService:
             content=clean_content,
             category=data.category,
             source_message_id=data.source_message_id,
+            user_id=user_id,
         )
         return MemoryRead.model_validate(memory)
 
@@ -40,8 +41,9 @@ class MemoryService:
         self,
         category: MemoryCategory | str | None = None,
         include_archived: bool = False,
+        user_id: int | None = None,
     ) -> list[MemoryRead]:
-        mems = self.repo.list_memories(category=category, include_archived=include_archived)
+        mems = self.repo.list_memories(category=category, include_archived=include_archived, user_id=user_id)
         return [MemoryRead.model_validate(m) for m in mems]
 
     def update_memory(self, memory_id: int, data: MemoryUpdate) -> MemoryRead:
@@ -91,16 +93,17 @@ class MemoryService:
         query: str | None = None,
         category: MemoryCategory | str | None = None,
         limit: int = 5,
+        user_id: int | None = None,
     ) -> list[MemoryRead]:
         """Retrieve active memories filtered by category and simple relevance keyword matching."""
         if not query:
             # Return most recent active memories up to limit
-            mems = self.repo.list_memories(category=category, include_archived=False)[:limit]
+            mems = self.repo.list_memories(category=category, include_archived=False, user_id=user_id)[:limit]
             return [MemoryRead.model_validate(m) for m in mems]
 
         clean_query = query.strip()
         # Strategy 1: Search substring/keyword match
-        mems = list(self.repo.search_memories(query=clean_query, category=category, include_archived=False, limit=limit))
+        mems = list(self.repo.search_memories(query=clean_query, category=category, include_archived=False, limit=limit, user_id=user_id))
 
         # Strategy 2: If query has multiple words, match individual significant terms if search results < limit
         if len(mems) < limit and " " in clean_query:
@@ -109,7 +112,7 @@ class MemoryService:
             for w in words:
                 if len(mems) >= limit:
                     break
-                extra = self.repo.search_memories(query=w, category=category, include_archived=False, limit=limit)
+                extra = self.repo.search_memories(query=w, category=category, include_archived=False, limit=limit, user_id=user_id)
                 for em in extra:
                     if em.id not in existing_ids and len(mems) < limit:
                         mems.append(em)

@@ -37,11 +37,19 @@ class HabitRepository:
         return self.db.get(Habit, habit_id)
 
     def list(
-        self, *, skip: int = 0, limit: int = 100, include_archived: bool = True
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        include_archived: bool = True,
+        user_id: int | None = None,
     ) -> list[Habit]:
-        stmt = select(Habit).order_by(Habit.created_at.desc()).offset(skip).limit(limit)
+        stmt = select(Habit).order_by(Habit.created_at.desc())
+        if user_id is not None:
+            stmt = stmt.where(Habit.user_id == user_id)
         if not include_archived:
             stmt = stmt.where(Habit.archived_at.is_(None))
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def update(self, habit: Habit, changes: dict) -> Habit:

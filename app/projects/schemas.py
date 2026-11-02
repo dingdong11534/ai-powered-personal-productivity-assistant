@@ -51,5 +51,38 @@ class ProjectRead(ProjectBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    user_id: int | None = None
     created_at: datetime
-    archived_at: datetime | None
+    archived_at: datetime | None = None
+
+
+class ProjectInviteCreate(BaseModel):
+    user_id: int = Field(..., description="Unique User ID to invite to this project")
+
+
+class ProjectMemberRead(BaseModel):
+    id: int
+    project_id: int
+    user_id: int
+    username: str
+    role: str
+    status: str
+    is_online: bool = False
+    token_usage: int | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectInviteRead(BaseModel):
+    id: int
+    project_id: int
+    project_name: str
+    project_color: str | None = None
+    invited_by_id: int | None = None
+    invited_by_name: str | None = None
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+

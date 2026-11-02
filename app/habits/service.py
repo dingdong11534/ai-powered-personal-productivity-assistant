@@ -46,8 +46,11 @@ class HabitService:
         self.repository = HabitRepository(db)
         self.completions = HabitCompletionRepository(db)
 
-    def create_habit(self, data: HabitCreate) -> Habit:
-        habit = Habit(**data.model_dump())
+    def create_habit(self, data: HabitCreate, *, user_id: int | None = None) -> Habit:
+        fields = data.model_dump()
+        if user_id is not None:
+            fields["user_id"] = user_id
+        habit = Habit(**fields)
         return self.repository.create(habit)
 
     def get_habit(self, habit_id: int) -> Habit:
@@ -57,9 +60,19 @@ class HabitService:
         return habit
 
     def list_habits(
-        self, *, skip: int = 0, limit: int = 100, include_archived: bool = True
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        include_archived: bool = True,
+        user_id: int | None = None,
     ) -> list[Habit]:
-        return self.repository.list(skip=skip, limit=limit, include_archived=include_archived)
+        return self.repository.list(
+            skip=skip,
+            limit=limit,
+            include_archived=include_archived,
+            user_id=user_id,
+        )
 
     def update_habit(self, habit_id: int, data: HabitUpdate) -> Habit:
         habit = self.get_habit(habit_id)

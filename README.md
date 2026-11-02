@@ -204,3 +204,32 @@ the first time.
   `app.core.permissions`, not ad hoc checks scattered per feature.
 - No dependency is added before a phase actually needs it — see the table
   in `docs/architecture.md`. Phase 2 added zero new dependencies.
+
+## Deployment (Render & Vercel)
+
+### 1. Render Deployment (Recommended for Full Backend + DB)
+The repository includes a ready-to-use [render.yaml](file:///home/ding/personal-assistant/render.yaml) blueprint:
+1. Push your repository to GitHub.
+2. In [Render Dashboard](https://dashboard.render.com), click **New +** → **Blueprint**.
+3. Select your repository. Render automatically provisions:
+   - A free PostgreSQL database (`assistant-db`)
+   - A FastAPI Python web service running with Gunicorn + Uvicorn workers
+4. Add your API keys (e.g. `GROQ_API_KEY`, `OPENAI_AI_API_KEY`, or `GEMINI_API_KEY`) in the environment tab.
+5. Once deployed, open `https://<service-name>.onrender.com` to access the full application.
+
+### 2. Vercel Deployment
+The repository includes [vercel.json](file:///home/ding/personal-assistant/vercel.json) and [api/index.py](file:///home/ding/personal-assistant/api/index.py):
+- Connect the repository in Vercel.
+- Supply a remote `DATABASE_URL` (such as Render PostgreSQL, Neon, or Supabase) in Vercel Environment Variables.
+- Vercel builds and runs the application using `@vercel/python`.
+
+## Multi-User Testing Credentials
+For quick local testing and evaluation, 5 test users are pre-configured:
+- **Admin**: `admin` (Use the admin password configured during initial setup)
+- **Test Users** (Password for all 5 is `123`):
+  - `jordan`
+  - `alex`
+  - `taylor`
+  - `sam`
+  - `morgan`
+

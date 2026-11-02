@@ -73,6 +73,9 @@ from app.files.exceptions import (
 )
 from app.habits.exceptions import ArchivedHabitError, DuplicateCompletionError, HabitNotFoundError
 from app.interfaces.api.ai_config import router as ai_config_router
+from app.interfaces.api.auth import router as auth_router
+from app.interfaces.api.users import router as users_router
+
 from app.interfaces.api.conversations import router as conversations_router
 from app.interfaces.api.files import router as files_router
 from app.interfaces.api.habits import router as habits_router
@@ -108,10 +111,27 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_all_tables()
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            from scripts.seed_mock_data import seed_mock_data
+            seed_mock_data()
+        except Exception:
+            pass
     yield
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def add_cache_control_headers(request: Request, call_next):
+    response = await call_next(request)
+    # Ensure API responses are never cached by browsers to eliminate stale UI state
+    if not request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 def _json_error(status_code: int):
@@ -177,6 +197,11 @@ app.include_router(conversations_router)
 app.include_router(memories_router)
 app.include_router(files_router)
 app.include_router(ai_config_router)
+app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(users_router)
+app.include_router(users_router, prefix="/api")
+
 
 
 

@@ -118,31 +118,21 @@ class TagRead(BaseModel):
 
 
 class TaskRead(TaskBase):
-    """What the API returns for a task.
-
-    Includes `tags` (read-only, populated from the Task.tags
-    relationship) so a client can see a task's tags without a second
-    request — but `tags` is deliberately absent from TaskCreate/TaskUpdate:
-    attaching/detaching tags goes through their own endpoints
-    (`POST`/`DELETE /tasks/{id}/tags/{tag_id}`), not through the general
-    task update payload, keeping "what tags does this task have" and
-    "edit this task's fields" as separate, unambiguous actions.
-    """
+    """What the API returns for a task."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    user_id: int | None = None
+    assigned_user_id: int | None = None
+    assigned_username: str | None = None
     created_at: datetime
     updated_at: datetime
     tags: list[TagRead] = Field(default_factory=list)
 
 
 class TaskDependencyCreate(BaseModel):
-    """What a client sends to POST /tasks/{task_id}/dependencies.
-
-    `task_id` itself comes from the URL path, not the body — only the
-    task it depends on needs to be supplied here.
-    """
+    """What a client sends to POST /tasks/{task_id}/dependencies."""
 
     depends_on_task_id: int
 
@@ -154,3 +144,28 @@ class TaskDependencyRead(BaseModel):
 
     task_id: int
     depends_on_task_id: int
+
+
+class TaskAssignmentRequestCreate(BaseModel):
+    to_user_id: int = Field(..., description="Unique User ID to request task assignment from")
+    notes: str | None = Field(default=None, description="Optional notes or instructions for the user")
+
+
+class TaskAssignmentRequestRead(BaseModel):
+    id: int
+    task_id: int
+    task_title: str
+    task_priority: int = 2
+    task_deadline: datetime | None = None
+    project_id: int | None = None
+    project_name: str | None = None
+    from_user_id: int
+    from_username: str
+    to_user_id: int
+    to_username: str
+    notes: str | None = None
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+

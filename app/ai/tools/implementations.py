@@ -1,6 +1,6 @@
 """Concrete implementations of AI tools calling domain services."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from app.habits.schemas import HabitCreate
 from app.habits.service import HabitService
 from app.memories.schemas import MemoryCreate, MemoryUpdate
 from app.memories.service import MemoryService
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationService, record_activity
 from app.pomodoro.service import PomodoroSessionService
 from app.projects.schemas import ProjectCreate
 from app.projects.service import ProjectService
@@ -64,15 +64,59 @@ class CreateTaskTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
+        title = (
+            args.get("title")
+            or args.get("name")
+            or args.get("task_name")
+            or args.get("description")
+            or "New Task"
+        )
+        desc = args.get("description")
+        if desc == title:
+            desc = None
+
+        raw_p = args.get("priority", 2)
+        if isinstance(raw_p, str):
+            p_map = {"critical": 1, "highest": 1, "urgent": 1, "high": 2, "medium": 3, "low": 4}
+            priority = p_map.get(raw_p.lower(), 2)
+        else:
+            try:
+                priority = int(raw_p)
+            except Exception:
+                priority = 2
+
+        proj_id = args.get("project_id")
+        if not proj_id and (args.get("project_name") or args.get("project")):
+            p_name = str(args.get("project_name") or args.get("project")).lower()
+            p_svc = ProjectService(session)
+            for p in p_svc.list_projects():
+                if p_name in p.name.lower():
+                    proj_id = p.id
+                    break
+        elif isinstance(proj_id, str) and not proj_id.isdigit():
+            p_name = proj_id.lower()
+            p_svc = ProjectService(session)
+            for p in p_svc.list_projects():
+                if p_name in p.name.lower():
+                    proj_id = p.id
+                    break
+        elif proj_id is not None:
+            try:
+                proj_id = int(proj_id)
+            except Exception:
+                pass
+
         dl = datetime.fromisoformat(args["deadline"]) if args.get("deadline") else None
         t_data = TaskCreate(
-            title=args["title"],
-            description=args.get("description"),
-            priority=args.get("priority", 2),
-            project_id=args.get("project_id"),
+            title=str(title).strip(),
+            description=desc,
+            priority=priority,
+            project_id=proj_id,
             deadline=dl,
         )
-        task = svc.create_task(t_data)
+        task_user_id = args.get("user_id") or 1
+        task = svc.create_task(t_data, user_id=task_user_id)
+        record_activity(session, f"Task created: {task.title}", body=task.description, source="task", user_id=task_user_id)
         return _to_dict(task)
 
 
@@ -95,13 +139,51 @@ class UpdateTaskTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
-        task_id = args["task_id"]
+        task_id = args.get("task_id") or args.get("id")
+        if not task_id and (args.get("task_title") or args.get("title")):
+            t_title = str(args.get("task_title") or args.get("title")).lower()
+            for t in svc.list_tasks():
+                if t_title in t.title.lower():
+                    task_id = t.id
+                    break
+        elif isinstance(task_id, str) and not task_id.isdigit():
+            t_title = task_id.lower()
+            for t in svc.list_tasks():
+                if t_title in t.title.lower():
+                    task_id = t.id
+                    break
+        if not task_id:
+            raise ValueError("Task ID is required for update_task")
+        task_id = int(task_id)
         update_kwargs = {}
         for key in ("title", "description", "status", "priority", "project_id"):
             if key in args and args[key] is not None:
                 update_kwargs[key] = args[key]
+        if "project_id" not in update_kwargs and (args.get("project_name") or args.get("project")):
+            p_name = str(args.get("project_name") or args.get("project")).lower()
+            if p_name in ("none", "null", "clear", "unlink"):
+                update_kwargs["project_id"] = None
+            else:
+                p_svc = ProjectService(session)
+                for p in p_svc.list_projects():
+                    if p_name in p.name.lower():
+                        update_kwargs["project_id"] = p.id
+                        break
+        elif "project_id" in update_kwargs:
+            val = update_kwargs["project_id"]
+            if isinstance(val, str) and not val.isdigit():
+                p_name = val.lower()
+                if p_name in ("none", "null", "clear", "unlink"):
+                    update_kwargs["project_id"] = None
+                else:
+                    p_svc = ProjectService(session)
+                    for p in p_svc.list_projects():
+                        if p_name in p.name.lower():
+                            update_kwargs["project_id"] = p.id
+                            break
         t_data = TaskUpdate(**update_kwargs)
         task = svc.update_task(task_id, t_data)
+        record_activity(session, f"Task updated: {task.title}", source="task")
         return _to_dict(task)
 
 
@@ -162,7 +244,17 @@ class CompleteTaskTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
-        task = svc.update_task(args["task_id"], TaskUpdate(status="done"))
+        raw_id = args.get("task_id") or args.get("id")
+        if not raw_id:
+            title = args.get("title") or args.get("task_name")
+            if title:
+                matches = svc.list_tasks(search=str(title))
+                if matches:
+                    raw_id = matches[0].id
+        if not raw_id:
+            raise ValueError("Task ID is required for complete_task")
+        task = svc.update_task(int(raw_id), TaskUpdate(status="done"))
+        record_activity(session, f"Task completed: {task.title}", source="task")
         return _to_dict(task)
 
 
@@ -180,8 +272,23 @@ class DeleteTaskTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = TaskService(session)
-        svc.delete_task(args["task_id"])
-        return {"success": True, "message": f"Task #{args['task_id']} deleted successfully."}
+        raw_id = args.get("task_id") or args.get("id")
+        if raw_id is None:
+            # Fallback: title lookup if model passed title
+            title = args.get("title") or args.get("task_name")
+            if title:
+                matches = svc.list_tasks(search=str(title))
+                if matches:
+                    raw_id = matches[0].id
+        if raw_id is None:
+            return {"success": False, "error": "task_id is required"}
+        try:
+            task_id = int(raw_id)
+        except (ValueError, TypeError):
+            return {"success": False, "error": f"Invalid task_id: {raw_id}"}
+        svc.delete_task(task_id)
+        record_activity(session, f"Task deleted: ID #{task_id}", source="task")
+        return {"success": True, "message": f"Task #{task_id} deleted successfully."}
 
 
 # ---------------- PROJECTS ----------------
@@ -201,11 +308,17 @@ class CreateProjectTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
-        proj = svc.create_project(ProjectCreate(
-            name=args["name"],
-            description=args.get("description"),
-            color=args.get("color"),
-        ))
+        name = args.get("name") or args.get("title") or "New Project"
+        proj_user_id = args.get("user_id") or 1
+        proj = svc.create_project(
+            ProjectCreate(
+                name=str(name).strip(),
+                description=args.get("description"),
+                color=args.get("color"),
+            ),
+            user_id=proj_user_id,
+        )
+        record_activity(session, f"Project created: {proj.name}", body=proj.description, source="project", user_id=proj_user_id)
         return _to_dict(proj)
 
 
@@ -240,7 +353,10 @@ class ArchiveProjectTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
-        proj = svc.archive_project(args["project_id"])
+        project_id = args.get("project_id") or args.get("id")
+        if not project_id:
+            raise ValueError("project_id is required for archive_project")
+        proj = svc.archive_project(project_id)
         return _to_dict(proj)
 
 
@@ -258,8 +374,77 @@ class DeleteProjectTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ProjectService(session)
-        svc.delete_project(args["project_id"])
-        return {"success": True, "message": f"Project #{args['project_id']} deleted successfully."}
+        project_id = args.get("project_id") or args.get("id")
+        if not project_id:
+            raise ValueError("project_id is required for delete_project")
+        svc.delete_project(project_id)
+        return {"success": True, "message": f"Project #{project_id} deleted successfully."}
+
+
+class AssignTaskToProjectTool(BaseTool):
+    """Assign or connect an existing task to a project (or unlink it)."""
+
+    name = "assign_task_to_project"
+    description = "Connect an existing task to a project by ID or project name, or unlink it."
+    scope = PermissionScope.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "integer", "description": "ID of the task to assign"},
+            "project_id": {"type": "integer", "description": "ID of the target project, or null to unlink"},
+            "project_name": {"type": "string", "description": "Optional name of the target project (or 'none' to unlink)"},
+        },
+        "required": ["task_id"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        task_svc = TaskService(session)
+        proj_svc = ProjectService(session)
+        raw_task_id = args.get("task_id") or args.get("id")
+        if not raw_task_id and (args.get("task_title") or args.get("title")):
+            t_title = str(args.get("task_title") or args.get("title")).lower()
+            for t in task_svc.list_tasks():
+                if t_title in t.title.lower():
+                    raw_task_id = t.id
+                    break
+        elif isinstance(raw_task_id, str) and not raw_task_id.isdigit():
+            t_title = raw_task_id.lower()
+            for t in task_svc.list_tasks():
+                if t_title in t.title.lower():
+                    raw_task_id = t.id
+                    break
+        if not raw_task_id:
+            raise ValueError("task_id is required")
+        task_id = int(raw_task_id)
+
+        target_proj_id = args.get("project_id")
+        if target_proj_id is None and (args.get("project_name") or args.get("project")):
+            p_name = str(args.get("project_name") or args.get("project")).lower()
+            if p_name in ("none", "null", "unlink", "clear"):
+                target_proj_id = None
+            else:
+                for p in proj_svc.list_projects():
+                    if p_name in p.name.lower():
+                        target_proj_id = p.id
+                        break
+
+        task = task_svc.update_task(task_id, TaskUpdate(project_id=target_proj_id))
+        proj_title = "None"
+        if target_proj_id:
+            try:
+                p = proj_svc.get_project(target_proj_id)
+                proj_title = p.name if p else f"#{target_proj_id}"
+            except Exception:
+                proj_title = f"#{target_proj_id}"
+        record_activity(session, f"Task #{task_id} connected to project: {proj_title}", source="project")
+        return {
+            "success": True,
+            "task_id": task.id,
+            "task_title": task.title,
+            "project_id": target_proj_id,
+            "project_name": proj_title,
+            "message": f"Task '{task.title}' connected to project '{proj_title}'.",
+        }
 
 
 # ---------------- HABITS ----------------
@@ -279,11 +464,27 @@ class CreateHabitTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
-        habit = svc.create_habit(HabitCreate(
-            name=args["name"],
-            frequency=args.get("frequency", "daily"),
-            target_count=args.get("target_count", 1),
-        ))
+        name = args.get("name") or args.get("title") or "New Habit"
+        freq = str(args.get("frequency", "daily")).lower()
+        if freq not in ("daily", "weekly", "monthly"):
+            freq = "daily"
+        raw_count = args.get("target_count")
+        try:
+            target_count = int(raw_count) if raw_count is not None else 1
+        except Exception:
+            target_count = 1
+        if target_count < 1 or target_count > 100:
+            target_count = 1
+        habit_user_id = args.get("user_id") or 1
+        habit = svc.create_habit(
+            HabitCreate(
+                name=str(name).strip(),
+                frequency=freq,
+                target_count=target_count,
+            ),
+            user_id=habit_user_id,
+        )
+        record_activity(session, f"Habit created: {habit.name}", source="habit", user_id=habit_user_id)
         return _to_dict(habit)
 
 
@@ -301,8 +502,28 @@ class CompleteHabitTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
-        comp = svc.record_completion(args["habit_id"])
-        return _to_dict(comp)
+        raw_id = args.get("habit_id") or args.get("id")
+        if not raw_id:
+            name = args.get("name") or args.get("habit_name") or args.get("title")
+            if name:
+                habits = svc.list_habits()
+                for h in habits:
+                    if str(name).lower() in h.name.lower():
+                        raw_id = h.id
+                        break
+        if not raw_id:
+            raise ValueError("Habit ID is required for complete_habit")
+        comp = svc.record_completion(int(raw_id))
+        res = _to_dict(comp)
+        try:
+            h = svc.get_habit(int(raw_id))
+            if h:
+                res["habit_name"] = h.name
+                res["habit_id"] = h.id
+                record_activity(session, f"Habit completed: {h.name}", source="habit")
+        except Exception:
+            record_activity(session, f"Habit completed: ID #{raw_id}", source="habit")
+        return res
 
 
 class GetHabitStatisticsTool(BaseTool):
@@ -319,7 +540,18 @@ class GetHabitStatisticsTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
-        stats = svc.get_statistics(args["habit_id"])
+        raw_id = args.get("habit_id") or args.get("id")
+        if not raw_id:
+            name = args.get("name") or args.get("habit_name")
+            if name:
+                habits = svc.list_habits()
+                for h in habits:
+                    if str(name).lower() in h.name.lower():
+                        raw_id = h.id
+                        break
+        if not raw_id:
+            raise ValueError("Habit ID is required for get_habit_statistics")
+        stats = svc.get_statistics(int(raw_id))
         return _to_dict(stats)
 
 
@@ -337,8 +569,20 @@ class DeleteHabitTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = HabitService(session)
-        svc.delete_habit(args["habit_id"])
-        return {"success": True, "message": f"Habit #{args['habit_id']} deleted successfully."}
+        raw_id = args.get("habit_id") or args.get("id")
+        if not raw_id:
+            name = args.get("name") or args.get("habit_name") or args.get("title")
+            if name:
+                habits = svc.list_habits()
+                for h in habits:
+                    if str(name).lower() in h.name.lower():
+                        raw_id = h.id
+                        break
+        if not raw_id:
+            return {"success": False, "error": "habit_id is required"}
+        svc.delete_habit(int(raw_id))
+        record_activity(session, f"Habit deleted: ID #{raw_id}", source="habit")
+        return {"success": True, "message": f"Habit #{raw_id} deleted successfully.", "habit_id": int(raw_id)}
 
 
 # ---------------- POMODORO ----------------
@@ -355,7 +599,10 @@ class StartPomodoroTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = PomodoroSessionService(session)
-        pomo = svc.start_session(task_id=args.get("task_id"))
+        pomo_user_id = args.get("user_id") or 1
+        pomo = svc.start_session(task_id=args.get("task_id"), user_id=pomo_user_id)
+        p_title = getattr(pomo, "title", None) or "Focus session"
+        record_activity(session, f"Pomodoro started: {p_title}", source="pomodoro", user_id=pomo_user_id)
         return _to_dict(pomo)
 
 
@@ -378,6 +625,7 @@ class EndPomodoroTool(BaseTool):
             args["session_id"],
             interrupted=args.get("interrupted", False),
         )
+        record_activity(session, f"Pomodoro ended: session #{args['session_id']}", source="pomodoro")
         return _to_dict(pomo)
 
 
@@ -416,12 +664,27 @@ class CreateReminderTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ReminderService(session)
-        dt = datetime.fromisoformat(args["remind_at"])
-        rem = svc.create_reminder(ReminderCreate(
-            message=args["message"],
-            remind_at=dt,
-            task_id=args.get("task_id"),
-        ))
+        msg = args.get("message") or args.get("title") or args.get("text") or "Reminder"
+        raw_dt = args.get("remind_at") or args.get("time") or args.get("datetime")
+        dt = None
+        if raw_dt:
+            try:
+                dt = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
+            except Exception:
+                pass
+        if dt is None:
+            from datetime import timedelta
+            dt = datetime.now(timezone.utc) + timedelta(hours=1)
+        rem_user_id = args.get("user_id") or 1
+        rem = svc.create_reminder(
+            ReminderCreate(
+                message=str(msg).strip(),
+                remind_at=dt,
+                task_id=args.get("task_id"),
+            ),
+            user_id=rem_user_id,
+        )
+        record_activity(session, f"Reminder set: {rem.message}", source="reminder", user_id=rem_user_id)
         return _to_dict(rem)
 
 
@@ -462,8 +725,20 @@ class DeleteReminderTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ReminderService(session)
-        svc.delete_reminder(args["reminder_id"])
-        return {"success": True, "message": f"Reminder #{args['reminder_id']} deleted successfully."}
+        raw_id = args.get("reminder_id") or args.get("id")
+        if not raw_id:
+            msg = args.get("message") or args.get("title")
+            if msg:
+                rems = svc.list_reminders()
+                for r in rems:
+                    if str(msg).lower() in r.message.lower():
+                        raw_id = r.id
+                        break
+        if not raw_id:
+            return {"success": False, "error": "reminder_id is required"}
+        svc.delete_reminder(int(raw_id))
+        record_activity(session, f"Reminder deleted: ID #{raw_id}", source="reminder")
+        return {"success": True, "message": f"Reminder #{raw_id} deleted successfully.", "reminder_id": int(raw_id)}
 
 
 # ---------------- SCHEDULE ----------------
@@ -484,12 +759,38 @@ class CreateScheduleItemTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ScheduleService(session)
-        s_item = svc.create_schedule_item(ScheduleItemCreate(
-            title=args["title"],
-            starts_at=datetime.fromisoformat(args["starts_at"]),
-            ends_at=datetime.fromisoformat(args["ends_at"]),
-            task_id=args.get("task_id"),
-        ))
+        title = args.get("title") or args.get("name") or "Schedule Item"
+        raw_start = args.get("starts_at") or args.get("start_time") or args.get("start")
+        raw_end = args.get("ends_at") or args.get("end_time") or args.get("end")
+        start_dt = None
+        end_dt = None
+        if raw_start:
+            try:
+                start_dt = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+            except Exception:
+                pass
+        if raw_end:
+            try:
+                end_dt = datetime.fromisoformat(str(raw_end).replace("Z", "+00:00"))
+            except Exception:
+                pass
+        now = datetime.now(timezone.utc)
+        if start_dt is None:
+            start_dt = now
+        if end_dt is None:
+            from datetime import timedelta
+            end_dt = start_dt + timedelta(hours=1)
+        sched_user_id = args.get("user_id") or 1
+        s_item = svc.create_schedule_item(
+            ScheduleItemCreate(
+                title=str(title).strip(),
+                starts_at=start_dt,
+                ends_at=end_dt,
+                task_id=args.get("task_id"),
+            ),
+            user_id=sched_user_id,
+        )
+        record_activity(session, f"Schedule added: {s_item.title}", source="schedule", user_id=sched_user_id)
         return _to_dict(s_item)
 
 
@@ -519,8 +820,20 @@ class DeleteScheduleItemTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = ScheduleService(session)
-        svc.delete_schedule_item(args["item_id"])
-        return {"success": True, "message": f"Schedule item #{args['item_id']} deleted successfully."}
+        raw_id = args.get("item_id") or args.get("id") or args.get("schedule_id")
+        if not raw_id:
+            title = args.get("title") or args.get("name")
+            if title:
+                items = svc.list_schedule_items()
+                for s in items:
+                    if str(title).lower() in s.title.lower():
+                        raw_id = s.id
+                        break
+        if not raw_id:
+            return {"success": False, "error": "item_id is required"}
+        svc.delete_schedule_item(int(raw_id))
+        record_activity(session, f"Schedule item deleted: ID #{raw_id}", source="schedule")
+        return {"success": True, "message": f"Schedule item #{raw_id} deleted successfully.", "item_id": int(raw_id)}
 
 
 # ---------------- NOTIFICATIONS ----------------
@@ -559,6 +872,66 @@ class MarkNotificationReadTool(BaseTool):
         return _to_dict(notif)
 
 
+# ---------------- CHAT HISTORY ----------------
+class SearchChatHistoryTool(BaseTool):
+    """Search through past conversation messages to retrieve previous discussions token-efficiently."""
+
+    name = "search_chat_history"
+    description = (
+        "Search through past conversation messages to recall prior instructions, discussions, "
+        "or answers token-efficiently. Returns matching message excerpts."
+    )
+    scope = PermissionScope.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Keywords or search term to look for in past conversations.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of excerpts to return (default: 5).",
+                "default": 5,
+            },
+        },
+        "required": ["query"],
+    }
+
+    def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
+        query = args.get("query", "").strip()
+        if not query:
+            return {"success": False, "error": "Query string is required"}
+        limit = min(max(int(args.get("limit", 5)), 1), 10)
+        from app.storage.models import Message, Conversation
+        q_pattern = f"%{query}%"
+        matches = (
+            session.query(Message, Conversation.title)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Message.content.ilike(q_pattern))
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        results = []
+        for m, conv_title in matches:
+            title = conv_title or f"Chat #{m.conversation_id}"
+            results.append({
+                "conversation_id": m.conversation_id,
+                "conversation_title": title,
+                "role": m.role,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "snippet": m.content[:240] + ("..." if len(m.content) > 240 else "") if m.content else "",
+            })
+        return {
+            "success": True,
+            "query": query,
+            "count": len(results),
+            "results": results,
+            "message": f"Found {len(results)} past chat message(s) matching '{query}'." if results else "No past messages found matching your query."
+        }
+
+
 # ---------------- MEMORIES ----------------
 class RememberInformationTool(BaseTool):
     name = "remember_information"
@@ -580,9 +953,18 @@ class RememberInformationTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = MemoryService(session)
+        content = args.get("content") or args.get("fact") or args.get("information") or args.get("text") or ""
         cat_str = args.get("category", "preference")
-        cat = MemoryCategory(cat_str)
-        mem = svc.create_memory(MemoryCreate(content=args["content"], category=cat))
+        try:
+            cat = MemoryCategory(cat_str)
+        except Exception:
+            cat = MemoryCategory.PREFERENCE
+        mem_user_id = args.get("user_id") or 1
+        mem = svc.create_memory(
+            MemoryCreate(content=str(content).strip(), category=cat),
+            user_id=mem_user_id,
+        )
+        record_activity(session, f"Memory saved: {str(content)[:40]}", source="memory", user_id=mem_user_id)
         return _to_dict(mem)
 
 
@@ -646,9 +1028,17 @@ class UpdateMemoryTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = MemoryService(session)
-        cat = MemoryCategory(args["category"]) if args.get("category") else None
+        raw_id = args.get("memory_id") or args.get("id")
+        if not raw_id:
+            raise ValueError("memory_id is required for update_memory")
+        cat = None
+        if args.get("category"):
+            try:
+                cat = MemoryCategory(args["category"])
+            except Exception:
+                pass
         mem = svc.update_memory(
-            args["memory_id"],
+            int(raw_id),
             MemoryUpdate(content=args.get("content"), category=cat),
         )
         return _to_dict(mem)
@@ -669,12 +1059,23 @@ class DeleteMemoryTool(BaseTool):
 
     def execute(self, args: dict[str, Any], session: Session) -> dict[str, Any]:
         svc = MemoryService(session)
+        raw_id = args.get("memory_id") or args.get("id")
+        if not raw_id:
+            q = args.get("content") or args.get("query")
+            if q:
+                mems = svc.retrieve_relevant_memories(query=str(q), limit=1)
+                if mems:
+                    raw_id = mems[0].id
+        if not raw_id:
+            return {"success": False, "error": "memory_id is required"}
         if args.get("hard_delete"):
-            svc.delete_memory(args["memory_id"])
-            return {"success": True, "message": f"Memory #{args['memory_id']} permanently deleted."}
+            svc.delete_memory(int(raw_id))
+            return {"success": True, "message": f"Memory #{raw_id} permanently deleted.", "memory_id": int(raw_id)}
         else:
-            mem = svc.archive_memory(args["memory_id"])
-            return _to_dict(mem)
+            mem = svc.archive_memory(int(raw_id))
+            res = _to_dict(mem)
+            res["message"] = f"Memory #{raw_id} archived successfully."
+            return res
 
 
 # ---------------- FILES / WORKSPACE ----------------
@@ -746,6 +1147,7 @@ class CreateWorkspaceFileTool(BaseTool):
             content=args["content"],
             overwrite=False,
         )
+        record_activity(session, f"File created: {args['path']}", source="file")
         return _to_dict(result)
 
 
@@ -885,6 +1287,7 @@ def get_default_tool_registry() -> ToolRegistry:
     registry.register(ListProjectsTool())
     registry.register(ArchiveProjectTool())
     registry.register(DeleteProjectTool())
+    registry.register(AssignTaskToProjectTool())
 
     registry.register(CreateHabitTool())
     registry.register(CompleteHabitTool())
@@ -905,6 +1308,7 @@ def get_default_tool_registry() -> ToolRegistry:
 
     registry.register(ListNotificationsTool())
     registry.register(MarkNotificationReadTool())
+    registry.register(SearchChatHistoryTool())
 
     registry.register(RememberInformationTool())
     registry.register(ListMemoriesTool())

@@ -63,8 +63,10 @@ class TaskService:
         self.projects = ProjectRepository(db)
         self.dependencies = TaskDependencyRepository(db)
 
-    def create_task(self, data: TaskCreate) -> Task:
+    def create_task(self, data: TaskCreate, *, user_id: int | None = None) -> Task:
         fields = data.model_dump()
+        if user_id is not None:
+            fields["user_id"] = user_id
         if fields.get("project_id") is not None:
             self._require_active_project(fields["project_id"])
         task = Task(**fields)
@@ -90,10 +92,9 @@ class TaskService:
         deadline_after: datetime | None = None,
         completed: bool | None = None,
         search: str | None = None,
+        user_id: int | None = None,
     ) -> list[Task]:
-        """See TaskRepository.list for what each filter means; this
-        method adds no business logic of its own on top — filtering
-        doesn't touch project/dependency validation."""
+        """See TaskRepository.list for what each filter means."""
         return self.repository.list(
             skip=skip,
             limit=limit,
@@ -105,6 +106,7 @@ class TaskService:
             deadline_after=deadline_after,
             completed=completed,
             search=search,
+            user_id=user_id,
         )
 
     def update_task(self, task_id: int, data: TaskUpdate) -> Task:

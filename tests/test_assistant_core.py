@@ -79,3 +79,33 @@ def test_assistant_core_destructive_two_step_flow(db_session):
     import pytest
     with pytest.raises(TaskNotFoundError):
         task_svc.get_task(task_id)
+
+
+def test_assistant_core_pending_destructive_confirmation(db_session):
+    """Test that when a user previously had a blocked destructive action,
+    sending a confirmation message with authorization automatically re-executes the blocked action."""
+    conv_svc = ConversationService(db_session)
+    task_svc = TaskService(db_session)
+    from app.tasks.schemas import TaskCreate
+    from app.tasks.exceptions import TaskNotFoundError
+    import pytest
+
+    task = task_svc.create_task(TaskCreate(title="Pending Confirmation Task"))
+    task_id = task.id
+
+    conv = conv_svc.create_conversation(ConversationCreate(title="Pending Confirm Chat"))
+
+    # Turn 1: User says "delete task", provider calls delete_task(1), but unauthorized
+    provider = MockAIProvider()
+    asst_unauth = AssistantCore(db_session, provider=provider, destructive_authorized=False)
+    asst_unauth.handle_user_message(conv.id, "delete task")
+    assert task_svc.get_task(task_id) is not None
+
+    # Turn 2: User responds with "Yes, I confirm and authorize this deletion."
+    asst_auth = AssistantCore(db_session, provider=provider, destructive_authorized=True)
+    msg2 = asst_auth.handle_user_message(conv.id, "Yes, I confirm and authorize this deletion.")
+    assert "Authorization confirmed" in msg2.content or "deleted successfully" in msg2.content
+
+    # Verify task is deleted
+    with pytest.raises(TaskNotFoundError):
+        task_svc.get_task(task_id)

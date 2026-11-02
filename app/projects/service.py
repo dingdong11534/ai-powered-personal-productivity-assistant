@@ -38,8 +38,11 @@ class ProjectService:
     def __init__(self, db: Session) -> None:
         self.repository = ProjectRepository(db)
 
-    def create_project(self, data: ProjectCreate) -> Project:
-        project = Project(**data.model_dump())
+    def create_project(self, data: ProjectCreate, *, user_id: int | None = None) -> Project:
+        fields = data.model_dump()
+        if user_id is not None:
+            fields["user_id"] = user_id
+        project = Project(**fields)
         return self.repository.create(project)
 
     def get_project(self, project_id: int) -> Project:
@@ -49,9 +52,19 @@ class ProjectService:
         return project
 
     def list_projects(
-        self, *, skip: int = 0, limit: int = 100, include_archived: bool = True
+        self,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        include_archived: bool = True,
+        user_id: int | None = None,
     ) -> list[Project]:
-        return self.repository.list(skip=skip, limit=limit, include_archived=include_archived)
+        return self.repository.list(
+            skip=skip,
+            limit=limit,
+            include_archived=include_archived,
+            user_id=user_id,
+        )
 
     def update_project(self, project_id: int, data: ProjectUpdate) -> Project:
         project = self.get_project(project_id)

@@ -25,6 +25,8 @@ class NotificationRead(BaseModel):
     id: int
     title: str
     body: str | None
+    user_id: int | None = None
     created_at: datetime
     read_at: datetime | None
     source: str | None
+

@@ -31,7 +31,9 @@ class MemoryRead(BaseModel):
     content: str
     category: MemoryCategory
     is_active: bool
+    user_id: int | None = None
     created_at: datetime
     updated_at: datetime
     source_message_id: int | None = None
+
 

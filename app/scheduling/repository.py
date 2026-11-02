@@ -28,12 +28,20 @@ class ScheduleItemRepository:
     def get(self, item_id: int) -> ScheduleItem | None:
         return self.db.get(ScheduleItem, item_id)
 
-    def list(self, *, skip: int = 0, limit: int = 100) -> list[ScheduleItem]:
-        stmt = select(ScheduleItem).order_by(ScheduleItem.starts_at).offset(skip).limit(limit)
+    def list(self, *, skip: int = 0, limit: int = 100, user_id: int | None = None) -> list[ScheduleItem]:
+        stmt = select(ScheduleItem).order_by(ScheduleItem.starts_at)
+        if user_id is not None:
+            stmt = stmt.where(ScheduleItem.user_id == user_id)
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def find_overlapping(
-        self, starts_at: datetime, ends_at: datetime, *, exclude_id: int | None = None
+        self,
+        starts_at: datetime,
+        ends_at: datetime,
+        *,
+        exclude_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[ScheduleItem]:
         """Items that overlap the [starts_at, ends_at) window — two
         ranges overlap when each starts before the other ends. Excludes
@@ -44,6 +52,8 @@ class ScheduleItemRepository:
         )
         if exclude_id is not None:
             stmt = stmt.where(ScheduleItem.id != exclude_id)
+        if user_id is not None:
+            stmt = stmt.where(ScheduleItem.user_id == user_id)
         return list(self.db.scalars(stmt))
 
     def update(self, item: ScheduleItem, changes: dict) -> ScheduleItem:

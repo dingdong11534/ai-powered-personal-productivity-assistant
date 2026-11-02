@@ -1,5 +1,4 @@
-"""Tool registry and safe tool execution orchestrator."""
-
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -28,25 +27,26 @@ class ToolRegistry:
             q = query.lower()
             matched_names = set()
 
-            # Domain keyword mapping
-            if any(w in q for w in ("task", "todo", "priority", "deadline", "status", "complete")):
-                matched_names.update(["create_task", "update_task", "delete_task", "list_tasks", "get_task"])
-            if any(w in q for w in ("project", "workspace project")):
-                matched_names.update(["create_project", "update_project", "archive_project", "delete_project", "list_projects"])
+            # Domain keyword and ID mapping
+            if any(w in q for w in ("task", "todo", "priority", "deadline", "status", "complete", "add", "create", "make", "new", "kunal", "connect", "assign")):
+                matched_names.update(["create_task", "update_task", "delete_task", "list_tasks", "search_tasks", "complete_task", "assign_task_to_project"])
+            if any(w in q for w in ("project", "workspace project", "connect", "assign")):
+                matched_names.update(["create_project", "update_project", "archive_project", "delete_project", "list_projects", "assign_task_to_project"])
             if any(w in q for w in ("habit", "streak", "routine")):
                 matched_names.update(["create_habit", "update_habit", "complete_habit", "delete_habit", "list_habits"])
             if any(w in q for w in ("pomodoro", "pomo", "focus", "timer")):
-                matched_names.update(["start_pomodoro", "end_pomodoro", "delete_pomodoro_session", "list_pomodoro_sessions"])
+                matched_names.update(["start_pomodoro", "end_pomodoro", "delete_pomodoro_session"])
             if any(w in q for w in ("remind", "reminder", "alert")):
                 matched_names.update(["create_reminder", "delete_reminder", "list_reminders"])
             if any(w in q for w in ("schedule", "calendar", "event", "meeting", "block", "slot")):
-                matched_names.update(["create_schedule_item", "update_schedule_item", "delete_schedule_item", "list_schedule_items"])
+                matched_names.update(["create_schedule_item", "delete_schedule_item", "list_schedule"])
             if any(w in q for w in ("memory", "remember", "preference", "forget", "recall")):
-                matched_names.update(["remember_information", "delete_memory", "list_memories"])
+                matched_names.update(["remember_information", "delete_memory", "list_memories", "search_memories"])
             if any(w in q for w in ("file", "document", "notes.txt", "notes", "write file", "read file", "list file")):
                 matched_names.update(["create_workspace_file", "read_workspace_file", "list_workspace_files", "delete_workspace_file"])
-            if any(w in q for w in ("delete", "remove", "destroy", "erase")):
+            if any(w in q for w in ("delete", "remove", "destroy", "erase", "yes", "confirm", "proceed", "authorize", "do that", "go ahead")):
                 matched_names.update([
+                    "create_task",
                     "delete_task",
                     "delete_project",
                     "delete_habit",
@@ -61,6 +61,10 @@ class ToolRegistry:
 
             if matched_names:
                 tools = [t for t in tools if t.name in matched_names]
+            else:
+                # Fallback core tool set for local models so small contexts aren't flooded with 30 schemas
+                core_tools = {"create_task", "update_task", "delete_task", "list_tasks", "search_tasks", "list_projects", "create_reminder", "list_reminders", "get_current_weather"}
+                tools = [t for t in tools if t.name in core_tools]
 
         schemas = []
         for tool in tools:

@@ -46,8 +46,10 @@ class ReminderService:
         self.repository = ReminderRepository(db)
         self.tasks = TaskRepository(db)
 
-    def create_reminder(self, data: ReminderCreate) -> Reminder:
+    def create_reminder(self, data: ReminderCreate, *, user_id: int | None = None) -> Reminder:
         fields = data.model_dump()
+        if user_id is not None:
+            fields["user_id"] = user_id
         if fields.get("task_id") is not None and self.tasks.get(fields["task_id"]) is None:
             raise TaskNotFoundError(fields["task_id"])
         reminder = Reminder(**fields)
@@ -59,16 +61,22 @@ class ReminderService:
             raise ReminderNotFoundError(reminder_id)
         return reminder
 
-    def list_reminders(self, *, skip: int = 0, limit: int = 100) -> list[Reminder]:
-        return self.repository.list(skip=skip, limit=limit)
+    def list_reminders(
+        self, *, skip: int = 0, limit: int = 100, user_id: int | None = None
+    ) -> list[Reminder]:
+        return self.repository.list(skip=skip, limit=limit, user_id=user_id)
 
-    def list_upcoming_reminders(self, *, as_of: datetime | None = None) -> list[Reminder]:
+    def list_upcoming_reminders(
+        self, *, as_of: datetime | None = None, user_id: int | None = None
+    ) -> list[Reminder]:
         as_of = as_of or datetime.now(timezone.utc).replace(tzinfo=None)
-        return self.repository.list_upcoming(as_of=as_of)
+        return self.repository.list_upcoming(as_of=as_of, user_id=user_id)
 
-    def list_due_reminders(self, *, as_of: datetime | None = None) -> list[Reminder]:
+    def list_due_reminders(
+        self, *, as_of: datetime | None = None, user_id: int | None = None
+    ) -> list[Reminder]:
         as_of = as_of or datetime.now(timezone.utc).replace(tzinfo=None)
-        return self.repository.list_due(as_of=as_of)
+        return self.repository.list_due(as_of=as_of, user_id=user_id)
 
     def update_reminder(self, reminder_id: int, data: ReminderUpdate) -> Reminder:
         reminder = self.get_reminder(reminder_id)

@@ -18,12 +18,14 @@ class MemoryRepository:
         content: str,
         category: MemoryCategory,
         source_message_id: int | None = None,
+        user_id: int | None = None,
     ) -> Memory:
         mem = Memory(
             content=content,
             category=category,
             source_message_id=source_message_id,
             is_active=True,
+            user_id=user_id,
         )
         self.session.add(mem)
         self.session.commit()
@@ -37,22 +39,29 @@ class MemoryRepository:
         self,
         category: MemoryCategory | str | None = None,
         include_archived: bool = False,
+        user_id: int | None = None,
     ) -> Sequence[Memory]:
         stmt = select(Memory)
         if not include_archived:
             stmt = stmt.where(Memory.is_active.is_(True))
         if category is not None:
             stmt = stmt.where(Memory.category == category)
+        if user_id is not None:
+            stmt = stmt.where(Memory.user_id == user_id)
         stmt = stmt.order_by(Memory.created_at.desc())
         return self.session.scalars(stmt).all()
 
-    def find_duplicate(self, category: MemoryCategory | str, content: str) -> Memory | None:
+    def find_duplicate(
+        self, category: MemoryCategory | str, content: str, user_id: int | None = None
+    ) -> Memory | None:
         """Find an active memory with exact content match in category."""
         stmt = select(Memory).where(
             Memory.is_active.is_(True),
             Memory.category == category,
             Memory.content == content.strip(),
         )
+        if user_id is not None:
+            stmt = stmt.where(Memory.user_id == user_id)
         return self.session.scalars(stmt).first()
 
     def search_memories(
@@ -61,12 +70,15 @@ class MemoryRepository:
         category: MemoryCategory | str | None = None,
         include_archived: bool = False,
         limit: int = 10,
+        user_id: int | None = None,
     ) -> Sequence[Memory]:
         stmt = select(Memory)
         if not include_archived:
             stmt = stmt.where(Memory.is_active.is_(True))
         if category is not None:
             stmt = stmt.where(Memory.category == category)
+        if user_id is not None:
+            stmt = stmt.where(Memory.user_id == user_id)
         if query:
             like = f"%{query}%"
             stmt = stmt.where(Memory.content.ilike(like))

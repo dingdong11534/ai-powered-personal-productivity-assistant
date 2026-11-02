@@ -138,6 +138,23 @@ class Settings(BaseSettings):
     offline_ai_base_url: str = Field(default="http://localhost:11434/v1")
     offline_ai_api_key: str | None = Field(default="ollama", repr=False)
 
+    # Provider-specific configurations
+    openai_api_key: str | None = Field(default=None, repr=False)
+    openai_model: str = Field(default="gpt-4o-mini")
+    openai_base_url: str = Field(default="https://api.openai.com/v1")
+
+    gemini_api_key: str | None = Field(default=None, repr=False)
+    gemini_model: str = Field(default="gemini-1.5-flash")
+    gemini_base_url: str = Field(default="https://generativelanguage.googleapis.com/v1beta/openai/")
+
+    groq_api_key: str | None = Field(default=None, repr=False)
+    groq_model: str = Field(default="llama-3.3-70b-versatile")
+    groq_base_url: str = Field(default="https://api.groq.com/openai/v1")
+
+    grok_api_key: str | None = Field(default=None, repr=False)
+    grok_model: str = Field(default="grok-beta")
+    grok_base_url: str = Field(default="https://api.x.ai/v1")
+
     # --- External integrations (Phase 7) ---
     # Domain allowlist: exact hostnames the SSRF-safe client is permitted to reach.
     # Add entries here (or via EXTERNAL_ALLOWED_DOMAINS env var as comma-separated

@@ -4,9 +4,9 @@ Pydantic schemas for the Pomodoro API boundary.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class PomodoroSessionCreate(BaseModel):
@@ -19,6 +19,7 @@ class PomodoroSessionCreate(BaseModel):
     """
 
     task_id: int | None = Field(default=None, description="Optional task this session is for.")
+    session_name: str | None = Field(default=None, description="Optional name for this focus session.")
 
 
 class PomodoroSessionEnd(BaseModel):
@@ -41,7 +42,16 @@ class PomodoroSessionRead(BaseModel):
 
     id: int
     task_id: int | None
+    session_name: str | None
     started_at: datetime
     ended_at: datetime | None
     interrupted: bool
     duration_seconds: int | None
+
+    @field_serializer("started_at", "ended_at", when_used="json")
+    def serialize_datetime(self, dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()

@@ -28,28 +28,29 @@ class ReminderRepository:
     def get(self, reminder_id: int) -> Reminder | None:
         return self.db.get(Reminder, reminder_id)
 
-    def list(self, *, skip: int = 0, limit: int = 100) -> list[Reminder]:
-        stmt = select(Reminder).order_by(Reminder.remind_at).offset(skip).limit(limit)
+    def list(self, *, skip: int = 0, limit: int = 100, user_id: int | None = None) -> list[Reminder]:
+        stmt = select(Reminder).order_by(Reminder.remind_at)
+        if user_id is not None:
+            stmt = stmt.where(Reminder.user_id == user_id)
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
-    def list_upcoming(self, *, as_of: datetime) -> list[Reminder]:
+    def list_upcoming(self, *, as_of: datetime, user_id: int | None = None) -> list[Reminder]:
         """Not-yet-fired reminders scheduled at or after `as_of`,
         soonest first."""
-        stmt = (
-            select(Reminder)
-            .where(Reminder.fired_at.is_(None), Reminder.remind_at >= as_of)
-            .order_by(Reminder.remind_at)
-        )
+        stmt = select(Reminder).where(Reminder.fired_at.is_(None), Reminder.remind_at >= as_of)
+        if user_id is not None:
+            stmt = stmt.where(Reminder.user_id == user_id)
+        stmt = stmt.order_by(Reminder.remind_at)
         return list(self.db.scalars(stmt))
 
-    def list_due(self, *, as_of: datetime) -> list[Reminder]:
+    def list_due(self, *, as_of: datetime, user_id: int | None = None) -> list[Reminder]:
         """Not-yet-fired reminders whose time has already come (at or
         before `as_of`) — the set a dispatcher would need to fire."""
-        stmt = (
-            select(Reminder)
-            .where(Reminder.fired_at.is_(None), Reminder.remind_at <= as_of)
-            .order_by(Reminder.remind_at)
-        )
+        stmt = select(Reminder).where(Reminder.fired_at.is_(None), Reminder.remind_at <= as_of)
+        if user_id is not None:
+            stmt = stmt.where(Reminder.user_id == user_id)
+        stmt = stmt.order_by(Reminder.remind_at)
         return list(self.db.scalars(stmt))
 
     def update(self, reminder: Reminder, changes: dict) -> Reminder:
