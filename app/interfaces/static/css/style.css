@@ -2130,3 +2130,360 @@ input[type="checkbox"]:checked::after {
   margin-top: 0.5rem;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   MOBILE RESPONSIVE SYSTEM (Phones & Tablets)
+   ───────────────────────────────────────────────────────────── */
+
+/* Desktop defaults: hide mobile-only controls */
+.mobile-menu-toggle,
+.mobile-sidebar-close,
+.mobile-bottom-nav,
+.sidebar-backdrop {
+  display: none;
+}
+
+.topbar-left-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  /* 1. Off-canvas Navigation Drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: -290px;
+    width: 275px;
+    max-width: 82vw;
+    z-index: 1000;
+    transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    padding: 1.25rem 1rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+
+  .mobile-sidebar-close {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--sketch-radius-sm);
+    border: var(--sketch-border-w) solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    margin-left: auto;
+  }
+
+  .sidebar-backdrop {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 11, 14, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  body.sidebar-open {
+    overflow: hidden;
+  }
+
+  /* 2. Sleek Mobile Bottom Navigation Bar */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--bg-secondary);
+    border-top: var(--sketch-border-w) solid var(--border-color);
+    z-index: 850;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+  }
+
+  .mobile-bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-family: var(--font-body);
+    font-weight: 600;
+    gap: 3px;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.1s ease;
+    padding: 4px 0;
+    touch-action: manipulation;
+  }
+
+  .mobile-bottom-nav-item:active {
+    transform: scale(0.92);
+  }
+
+  .mobile-bottom-nav-item.active {
+    color: var(--domain-tasks);
+  }
+
+  [data-theme="light"] .mobile-bottom-nav-item.active {
+    color: var(--accent-primary);
+  }
+
+  .mobile-bottom-nav-item.active svg {
+    stroke: currentColor;
+    stroke-width: 2.4;
+  }
+
+  .assistant-sparkle-pill {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent-primary-bg);
+    color: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+  }
+
+  .mobile-bottom-nav-item.active .assistant-sparkle-pill {
+    background: var(--accent-primary);
+    color: #fff;
+  }
+
+  /* 3. Mobile Topbar Header */
+  .topbar {
+    padding: 0 0.75rem;
+    height: 56px;
+    gap: 0.4rem;
+  }
+
+  .mobile-menu-toggle {
+    display: flex !important;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 0;
+  }
+
+  .topbar-title {
+    font-size: 1.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+  }
+
+  .topbar-actions {
+    gap: 0.4rem;
+  }
+
+  .search-box-wrapper {
+    display: none; /* Collapsed on mobile header to avoid overcrowding */
+  }
+
+  .user-name,
+  .user-role-badge,
+  .badge-online,
+  .badge-offline,
+  .chevron-icon,
+  .user-id-badge {
+    display: none !important;
+  }
+
+  .user-profile-btn {
+    padding: 3px 6px;
+    gap: 0.2rem;
+  }
+
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+  }
+
+  /* 4. Content Area adjustments */
+  .content-area {
+    padding: 1rem 0.75rem calc(68px + env(safe-area-inset-bottom, 0px)) 0.75rem !important;
+    overflow-x: hidden;
+  }
+
+  /* 5. Responsive Grids & Cards */
+  .stats-grid,
+  .grid-2col,
+  .projects-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.85rem;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .page-header h2 {
+    font-size: 1.35rem;
+  }
+
+  .page-header .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .filter-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-group select {
+    flex: 1;
+  }
+
+  .item-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.85rem 0.95rem;
+  }
+
+  .item-main {
+    width: 100%;
+  }
+
+  .item-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+
+  /* 6. Mobile Modals (Bottom-Sheet Experience) */
+  .modal-container {
+    padding: 0.5rem !important;
+    align-items: flex-end !important;
+  }
+
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88vh;
+    border-radius: var(--sketch-radius-md) var(--sketch-radius-md) 0 0 !important;
+    padding: 1.25rem 1rem !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 0.5rem;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 7. Mobile Chat Interface */
+  .chat-wrapper-layout {
+    flex-direction: column !important;
+    height: calc(100vh - 56px - 60px) !important;
+  }
+
+  .chat-convos-sidebar {
+    width: 100% !important;
+    max-height: 120px !important;
+    border-right: none !important;
+    border-bottom: var(--sketch-border-w) solid var(--border-color) !important;
+    flex-shrink: 0;
+  }
+
+  .chat-convos-list {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .chat-convo-item {
+    min-width: 150px;
+    white-space: nowrap;
+  }
+
+  .chat-stage {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+
+  .chat-centered-column {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .chat-input-dock {
+    padding: 0.4rem 0.6rem;
+  }
+
+  .chat-input-box-container {
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* 8. Touch Form Controls & iOS Font-Size Fix */
+  input,
+  select,
+  textarea,
+  .form-control {
+    font-size: 16px !important; /* Prevents auto-zoom in iOS Safari */
+  }
+
+  button,
+  .btn {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  .btn-sm {
+    min-height: 34px;
+  }
+
+  /* 9. Floating Pomodoro Widget on Mobile */
+  .floating-pomo-widget {
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+    right: 12px !important;
+  }
+}
+

@@ -804,12 +804,36 @@ function initNavigation() {
   });
 }
 
+function toggleMobileSidebar(force) {
+  const sidebar = document.querySelector('.sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!sidebar) return;
+  const shouldOpen = force !== undefined ? force : !sidebar.classList.contains('open');
+  if (shouldOpen) {
+    sidebar.classList.add('open');
+    if (backdrop) backdrop.classList.add('open');
+    document.body.classList.add('sidebar-open');
+  } else {
+    sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('open');
+    document.body.classList.remove('sidebar-open');
+  }
+}
+
 function switchTab(tabName, param) {
   if (!tabName) return;
   state.currentTab = tabName;
   document.querySelectorAll('.nav-item button').forEach(b => b.classList.remove('active'));
   const activeBtn = document.querySelector(`.nav-item button[data-target="${tabName}"]`);
   if (activeBtn) activeBtn.classList.add('active');
+
+  // Sync mobile bottom navigation active state
+  document.querySelectorAll('.mobile-bottom-nav-item').forEach(b => b.classList.remove('active'));
+  const activeBottomBtn = document.querySelector(`.mobile-bottom-nav-item[data-target="${tabName}"]`);
+  if (activeBottomBtn) activeBottomBtn.classList.add('active');
+
+  // Auto-close mobile sidebar drawer upon selecting a tab
+  toggleMobileSidebar(false);
 
   document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
   const activeSec = document.getElementById(`section-${tabName}`);
